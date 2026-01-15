@@ -1,0 +1,138 @@
+package com.example.agrosense.ui.viewmodel
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.agrosense.data.api.ApiClient
+import com.example.agrosense.data.model.LoginRequest
+import com.example.agrosense.data.model.RegisterRequest
+import com.example.agrosense.data.model.User
+import com.example.agrosense.data.storage.SessionManager
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import retrofit2.HttpException
+
+data class AuthState(
+    val isLoading: Boolean = false,
+    val error: String? = null,
+    val isLoggedIn: Boolean = false,
+    val user: User? = null
+)
+
+class AuthViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val session = SessionManager(app.applicationContext)
+
+    private val _state = MutableStateFlow(AuthState())
+    val state: StateFlow<AuthState> = _state
+
+    private fun httpErrorMessage(e: HttpException): String {
+        return try {
+            e.response()?.errorBody()?.string() ?: "Error HTTP ${e.code()}"
+        } catch (_: Exception) {
+            "Error HTTP ${e.code()}"
+        }
+    }
+
+    fun checkSession() {
+        viewModelScope.launch {
+            val token = session.getToken()
+            val logged = !token.isNullOrBlank()
+            _state.value = _state.value.copy(isLoggedIn = logged)
+
+            if (logged) {
+                loadMe() // trae datos reales
+            }
+        }
+    }
+
+    fun login(email: String, password: String) {
+        viewModelScope.launch {
+            try {
+                _state.value = AuthState(isLoading = true)
+
+                val res = ApiClient.authApi.login(
+                    LoginRequest(
+                        email = email.trim(),
+                        password = password
+                    )
+                )
+
+                session.saveToken(res.token)
+                _state.value = AuthState(isLoggedIn = true, user = res.user)
+
+                // Opcional: refrescar desde /me por si quieres la versión "oficial" de la DB
+                loadMe()
+
+            } catch (e: Exception) {
+                val msg = if (e is HttpException) httpErrorMessage(e) else (e.message ?: "Error desconocido")
+                _state.value = AuthState(isLoading = false, error = msg, isLoggedIn = false)
+            }
+        }
+    }
+
+    fun register(
+        nombre: String,
+        apellido: String,
+        email: String,
+        password: String,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                _state.value = AuthState(isLoading = true)
+
+                val res = ApiClient.authApi.register(
+                    RegisterRequest(
+                        first_name = nombre.trim(),
+                        last_name = apellido.trim(),
+                        email = email.trim(),
+                        password = password
+                    )
+                )
+
+                session.saveToken(res.token)
+                _state.value = AuthState(isLoggedIn = true, user = res.user)
+
+                // Cargar datos reales desde /me
+                loadMe()
+
+                onSuccess()
+
+            } catch (e: Exception) {
+                val msg = if (e is HttpException) httpErrorMessage(e) else (e.message ?: "Error desconocido")
+                _state.value = AuthState(isLoading = false, error = msg, isLoggedIn = false)
+            }
+        }
+    }
+
+    fun loadMe() {
+        viewModelScope.launch {
+            try {
+                val token = session.getToken()
+                if (token.isNullOrBlank()) return@launch
+
+                // No bloqueamos toda la app con loading fuerte, solo actualizamos usuario
+                val res = ApiClient.userApi.me("Bearer $token")
+                _state.value = _state.value.copy(user = res.user, error = null)
+
+            } catch (e: Exception) {
+                // Si token expiró o es inválido -> logout
+                if (e is HttpException && (e.code() == 401 || e.code() == 403)) {
+                    logout()
+                } else {
+                    val msg = if (e is HttpException) httpErrorMessage(e) else (e.message ?: "Error cargando perfil")
+                    _state.value = _state.value.copy(error = msg)
+                }
+            }
+        }
+    }
+
+    fun logout() {
+        viewModelScope.launch {
+            session.clear()
+            _state.value = AuthState(isLoggedIn = false, user = null)
+        }
+    }
+}
