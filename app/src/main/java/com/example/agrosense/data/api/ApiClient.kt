@@ -49,5 +49,19 @@ object ApiClient {
     val userApi: UserApi by lazy {
         retrofitUsers.create(UserApi::class.java)
     }
+    private const val API_BASE_URL =
+        "https://agrosense-backend-bjw4.onrender.com/api/"
+
+    private val retrofitApi: Retrofit by lazy {
+        Retrofit.Builder()
+            .baseUrl(API_BASE_URL)
+            .client(client)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
+
+    val sensorApi: SensorApi by lazy {
+        retrofitApi.create(SensorApi::class.java)
+    }
 }
 

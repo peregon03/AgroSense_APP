@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.agrosense.ui.viewmodel.AuthViewModel
@@ -22,7 +23,7 @@ import com.example.agrosense.ui.viewmodel.AuthViewModel
 @Composable
 fun ProfileScreen(
     vm: AuthViewModel,
-    // Luego conectamos estas acciones con navegación
+    // ✅ este callback lo usas para navegar a la pantalla BLE ("ble")
     onRegisterSensor: () -> Unit = {},
     onViewSensors: () -> Unit = {},
     onViewCharts: () -> Unit = {},
@@ -31,7 +32,6 @@ fun ProfileScreen(
     val state by vm.state.collectAsState()
     val user = state.user
 
-    // Cargar datos reales del usuario desde /me cuando entras a esta pantalla
     LaunchedEffect(Unit) {
         vm.loadMe()
     }
@@ -54,7 +54,6 @@ fun ProfileScreen(
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Avatar simple
                 Box(
                     modifier = Modifier
                         .size(54.dp)
@@ -94,7 +93,7 @@ fun ProfileScreen(
             }
         }
 
-        // Mostrar error (si hay)
+        // Error
         state.error?.let { err ->
             Spacer(Modifier.height(10.dp))
             Card(
@@ -124,10 +123,10 @@ fun ProfileScreen(
         Row(modifier = Modifier.fillMaxWidth()) {
             ActionCard(
                 modifier = Modifier.weight(1f),
-                title = "Registrar sensor",
-                subtitle = "Agregar un nuevo dispositivo",
+                title = "Agregar sensor (Bluetooth)",
+                subtitle = "Buscar y vincular ESP32",
                 icon = Icons.Filled.AddCircle,
-                onClick = onRegisterSensor
+                onClick = onRegisterSensor // ✅ aquí navegas a BLE
             )
             Spacer(Modifier.width(12.dp))
             ActionCard(
@@ -165,7 +164,6 @@ fun ProfileScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // Botón cerrar sesión
         Button(
             onClick = { vm.logout() },
             modifier = Modifier.fillMaxWidth(),
@@ -193,7 +191,7 @@ private fun ActionCard(
     modifier: Modifier = Modifier,
     title: String,
     subtitle: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     onClick: () -> Unit
 ) {
     Card(

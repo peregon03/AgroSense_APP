@@ -40,3 +40,6 @@ CREATE TABLE IF NOT EXISTS sensor_readings (
 
 CREATE INDEX IF NOT EXISTS idx_readings_sensor_id_created_at
 ON sensor_readings(sensor_id, created_at DESC);
+
+
+select * from sensors
