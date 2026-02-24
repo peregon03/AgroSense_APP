@@ -54,7 +54,6 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     e.message ?: "Error desconocido"
                 }
-
                 _state.value = SensorState(error = msg)
             }
         }
@@ -63,6 +62,7 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
     fun clear() {
         _state.value = SensorState()
     }
+
     fun loadSensors() {
         viewModelScope.launch {
             try {
@@ -75,7 +75,11 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 val res = ApiClient.sensorApi.listSensors(auth = "Bearer $token")
-                _state.value = _state.value.copy(isLoading = false, sensors = res.sensors)
+                // Usar lista vacía si el backend devuelve null
+                _state.value = _state.value.copy(
+                    isLoading = false,
+                    sensors = res.sensors ?: emptyList()
+                )
 
             } catch (e: Exception) {
                 val msg = if (e is HttpException)
@@ -86,6 +90,4 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
-
 }
-

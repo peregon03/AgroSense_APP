@@ -168,6 +168,7 @@ fun SensorsListScreen(
     }
 }
 
+
 @Composable
 private fun ReadingChip(label: String, value: String, modifier: Modifier = Modifier) {
     Card(
