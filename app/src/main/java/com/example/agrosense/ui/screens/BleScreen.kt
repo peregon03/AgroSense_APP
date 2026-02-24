@@ -1,32 +1,42 @@
 package com.example.agrosense.ui.screens
 
 import android.Manifest
+import android.bluetooth.BluetoothDevice
 import android.os.Build
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.BluetoothConnected
+import androidx.compose.material.icons.filled.BluetoothSearching
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.agrosense.ui.viewmodel.BleViewModel
+import com.example.agrosense.ui.viewmodel.SensorViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 
-@OptIn(ExperimentalPermissionsApi::class)
+@OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun BleScreen(
     viewModel: BleViewModel,
-    onBack: () -> Unit = {}
+    sensorViewModel: SensorViewModel,
+    onBack: () -> Unit = {},
+    onSensorRegistered: () -> Unit = {}
 ) {
-    val devices by viewModel.devices.collectAsState()
-    val deviceId by viewModel.deviceId.collectAsState()
-    val reading by viewModel.reading.collectAsState()
+    val devices     by viewModel.devices.collectAsState()
+    val deviceId    by viewModel.deviceId.collectAsState()
+    val isConnected by viewModel.isConnected.collectAsState()
+    val sensorState by sensorViewModel.state.collectAsState()
 
-    // Permisos requeridos según versión de Android
     val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        listOf(
-            Manifest.permission.BLUETOOTH_SCAN,
-            Manifest.permission.BLUETOOTH_CONNECT
-        )
+        listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
     } else {
         listOf(
             Manifest.permission.BLUETOOTH,
@@ -34,87 +44,240 @@ fun BleScreen(
             Manifest.permission.ACCESS_FINE_LOCATION
         )
     }
-
     val permissionsState = rememberMultiplePermissionsState(permissions)
 
-    Column(modifier = Modifier.padding(16.dp)) {
+    var isScanning         by remember { mutableStateOf(false) }
+    var selectedDevice     by remember { mutableStateOf<BluetoothDevice?>(null) }
+    var showRegisterDialog by remember { mutableStateOf(false) }
+    var sensorName         by remember { mutableStateOf("") }
+    var sensorLocation     by remember { mutableStateOf("") }
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Bluetooth (BLE)", style = MaterialTheme.typography.titleLarge)
-            TextButton(onClick = onBack) { Text("Volver") }
+    // Al registrar con éxito → navegar a lista
+    LaunchedEffect(sensorState.createdSensor) {
+        if (sensorState.createdSensor != null) {
+            showRegisterDialog = false
+            sensorViewModel.clear()
+            onSensorRegistered()
         }
+    }
 
-        Spacer(Modifier.height(12.dp))
-
-        if (!permissionsState.allPermissionsGranted) {
-            // Mostrar botón para pedir permisos
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "Se necesitan permisos de Bluetooth para escanear dispositivos.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Button(onClick = { permissionsState.launchMultiplePermissionRequest() }) {
-                        Text("Conceder permisos")
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Agregar sensor BLE") },
+                navigationIcon = {
+                    IconButton(onClick = {
+                        viewModel.stopScan()
+                        viewModel.disconnect()
+                        onBack()
+                    }) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Volver")
                     }
                 }
-            }
-            Spacer(Modifier.height(12.dp))
+            )
         }
+    ) { padding ->
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = {
-                    if (permissionsState.allPermissionsGranted) {
-                        viewModel.startScan()
-                    } else {
-                        permissionsState.launchMultiplePermissionRequest()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+        ) {
+
+            // Banner permisos
+            if (!permissionsState.allPermissionsGranted) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Se necesitan permisos de Bluetooth para escanear.")
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = { permissionsState.launchMultiplePermissionRequest() }) {
+                            Text("Conceder permisos")
+                        }
                     }
                 }
-            ) {
-                Text("Escanear")
+                Spacer(Modifier.height(16.dp))
             }
-            OutlinedButton(onClick = { viewModel.stopScan() }) {
-                Text("Detener")
+
+            // Banner conexión activa
+            if (isConnected) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.BluetoothConnected, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text("Conectado", style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary)
+                            deviceId?.let { Text("ID: $it", style = MaterialTheme.typography.bodySmall) }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
             }
-        }
 
-        Spacer(Modifier.height(16.dp))
-
-        Text("Dispositivos encontrados:", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-
-        if (devices.isEmpty()) {
-            Text("Aún no hay dispositivos. Pulsa \"Escanear\".")
-        } else {
-            devices.forEach { device ->
-                ElevatedButton(
+            // Botones escanear / detener
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
                     onClick = {
-                        try {
-                            viewModel.connect(device)
-                        } catch (e: SecurityException) {
-                            e.printStackTrace()
+                        if (permissionsState.allPermissionsGranted) {
+                            viewModel.startScan(); isScanning = true
+                        } else {
+                            permissionsState.launchMultiplePermissionRequest()
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    enabled = !isScanning,
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(
-                        try { device.name ?: device.address ?: "Dispositivo" }
-                        catch (e: SecurityException) { device.address ?: "Dispositivo" }
-                    )
+                    Icon(Icons.Filled.BluetoothSearching, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Escanear")
+                }
+                OutlinedButton(
+                    onClick = { viewModel.stopScan(); isScanning = false },
+                    enabled = isScanning,
+                    modifier = Modifier.weight(1f)
+                ) { Text("Detener") }
+            }
+
+            if (isScanning) {
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(4.dp))
+                Text("Buscando sensores ESP32... Los apagados desaparecen solos.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Spacer(Modifier.height(20.dp))
+            Text("Dispositivos encontrados:", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+
+            if (devices.isEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                    contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Filled.Bluetooth, contentDescription = null,
+                            modifier = Modifier.size(52.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Presiona «Escanear» para buscar sensores.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(devices, key = { it.address }) { device ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            onClick = {
+                                try {
+                                    selectedDevice = device
+                                    sensorName = try { device.name ?: "" } catch (e: SecurityException) { "" }
+                                    viewModel.stopScan()
+                                    isScanning = false
+                                    viewModel.connect(device)
+                                    showRegisterDialog = true
+                                } catch (e: SecurityException) { e.printStackTrace() }
+                            }
+                        ) {
+                            Row(modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.Bluetooth, contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    val name = try { device.name } catch (e: SecurityException) { null }
+                                    Text(name ?: "Dispositivo desconocido",
+                                        style = MaterialTheme.typography.titleSmall)
+                                    Text(device.address,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
 
-        Spacer(Modifier.height(20.dp))
-        HorizontalDivider()
-        Spacer(Modifier.height(12.dp))
+    // ── Diálogo de registro ─────────────────────────────────────────────────
+    if (showRegisterDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showRegisterDialog = false
+                viewModel.disconnect()
+                selectedDevice = null
+            },
+            title = { Text("Registrar sensor") },
+            text = {
+                Column {
+                    val displayId = deviceId ?: selectedDevice?.address ?: ""
+                    Text("ID: $displayId",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        Text("Device ID: ${deviceId ?: "--"}")
-        Text("Lectura: ${reading ?: "--"}")
+                    if (deviceId == null) {
+                        Spacer(Modifier.height(4.dp))
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text("Leyendo ID del dispositivo...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(value = sensorName, onValueChange = { sensorName = it },
+                        label = { Text("Nombre del sensor") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = sensorLocation, onValueChange = { sensorLocation = it },
+                        label = { Text("Ubicación (opcional)") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true)
+
+                    sensorState.error?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val id = deviceId ?: selectedDevice?.address ?: return@Button
+                        sensorViewModel.createSensor(
+                            deviceId = id,
+                            name = sensorName.trim().ifBlank { "Mi sensor" },
+                            location = sensorLocation.trim().ifBlank { null }
+                        )
+                    },
+                    enabled = !sensorState.isLoading
+                ) { Text(if (sensorState.isLoading) "Guardando..." else "Registrar") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showRegisterDialog = false
+                    viewModel.disconnect()
+                    selectedDevice = null
+                }) { Text("Cancelar") }
+            }
+        )
     }
 }

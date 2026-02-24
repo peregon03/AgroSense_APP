@@ -37,30 +37,24 @@ class MainActivity : ComponentActivity() {
                 "profile" ->
                     ProfileScreen(
                         vm = authVm,
-                        onRegisterSensor = { screen = "ble" },      // ✅ aquí vamos a BLE
-                        onViewSensors = { screen = "sensors_list" } // lo de siempre
+                        onRegisterSensor = { screen = "ble" },
+                        onViewSensors = { screen = "sensors_list" }
                     )
 
-                // ✅ NUEVA PANTALLA BLE
                 "ble" ->
                     BleScreen(
-                        viewModel = bleVm
-                    )
-                "ble" -> BleScreen(viewModel = bleVm, onBack = { screen = "profile" })
-
-                "register_sensor" ->
-                    RegisterSensorScreen(
-                        vm = sensorVm,
-                        onBack = { screen = "profile" }
+                        viewModel = bleVm,
+                        sensorViewModel = sensorVm,
+                        onBack = { screen = "profile" },
+                        onSensorRegistered = { screen = "sensors_list" }
                     )
 
                 "sensors_list" ->
                     SensorsListScreen(
                         vm = sensorVm,
+                        bleViewModel = bleVm,
                         onBack = { screen = "profile" }
                     )
-
-
 
                 else -> {}
             }
