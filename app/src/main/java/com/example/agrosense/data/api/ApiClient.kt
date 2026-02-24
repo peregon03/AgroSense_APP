@@ -8,9 +8,9 @@ import java.util.concurrent.TimeUnit
 
 object ApiClient {
 
-    // ✅ Producción (Render) - SIEMPRE HTTPS
-    private const val AUTH_BASE_URL = "https://agrosense-backend-bjw4.onrender.com/api/auth/"
-    private const val USERS_BASE_URL = "https://agrosense-backend-bjw4.onrender.com/api/users/"
+    private const val AUTH_BASE_URL = "https://agrosense-backend-production.up.railway.app/api/auth/"
+    private const val USERS_BASE_URL = "https://agrosense-backend-production.up.railway.app/api/users/"
+    private const val API_BASE_URL = "https://agrosense-backend-production.up.railway.app/api/"
 
     private val client: OkHttpClient by lazy {
         val logging = HttpLoggingInterceptor().apply {
@@ -19,7 +19,6 @@ object ApiClient {
 
         OkHttpClient.Builder()
             .addInterceptor(logging)
-            // ✅ Render free puede tardar en “despertar”
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
@@ -28,7 +27,7 @@ object ApiClient {
 
     private val retrofitAuth: Retrofit by lazy {
         Retrofit.Builder()
-            .baseUrl(AUTH_BASE_URL) // debe terminar en /
+            .baseUrl(AUTH_BASE_URL)
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
@@ -36,7 +35,15 @@ object ApiClient {
 
     private val retrofitUsers: Retrofit by lazy {
         Retrofit.Builder()
-            .baseUrl(USERS_BASE_URL) // debe terminar en /
+            .baseUrl(USERS_BASE_URL)
+            .client(client)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
+
+    private val retrofitApi: Retrofit by lazy {
+        Retrofit.Builder()
+            .baseUrl(API_BASE_URL)
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
@@ -48,16 +55,6 @@ object ApiClient {
 
     val userApi: UserApi by lazy {
         retrofitUsers.create(UserApi::class.java)
-    }
-    private const val API_BASE_URL =
-        "https://agrosense-backend-bjw4.onrender.com/api/"
-
-    private val retrofitApi: Retrofit by lazy {
-        Retrofit.Builder()
-            .baseUrl(API_BASE_URL)
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
     }
 
     val sensorApi: SensorApi by lazy {
