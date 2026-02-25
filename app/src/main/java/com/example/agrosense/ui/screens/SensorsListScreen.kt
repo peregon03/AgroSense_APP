@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.SignalWifi4Bar
 import androidx.compose.material.icons.filled.SignalWifiOff
@@ -14,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.ui.viewmodel.BleViewModel
 import com.example.agrosense.ui.viewmodel.SensorViewModel
 
@@ -29,7 +31,32 @@ fun SensorsListScreen(
     val reading     by bleViewModel.reading.collectAsState()
     val isConnected by bleViewModel.isConnected.collectAsState()
 
+    var sensorToDelete by remember { mutableStateOf<Sensor?>(null) }
+
     LaunchedEffect(Unit) { vm.loadSensors() }
+
+    // Diálogo de confirmación para eliminar
+    sensorToDelete?.let { sensor ->
+        AlertDialog(
+            onDismissRequest = { sensorToDelete = null },
+            title = { Text("Eliminar sensor") },
+            text = { Text("¿Estás seguro de que quieres eliminar \"${sensor.name}\"? Esta acción no se puede deshacer.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.deleteSensor(sensor.id)
+                        sensorToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) { Text("Eliminar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { sensorToDelete = null }) { Text("Cancelar") }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -59,14 +86,17 @@ fun SensorsListScreen(
             state.error?.let {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
                 ) { Text(it, modifier = Modifier.padding(12.dp)) }
                 Spacer(Modifier.height(12.dp))
             }
 
             if (!state.isLoading && state.sensors.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
-                    contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Filled.Sensors, contentDescription = null,
                             modifier = Modifier.size(56.dp),
@@ -81,7 +111,7 @@ fun SensorsListScreen(
                 }
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(state.sensors) { sensor ->
+                    items(state.sensors, key = { it.id }) { sensor ->
                         val isThisConnected = isConnected &&
                                 bleDeviceId != null &&
                                 bleDeviceId == sensor.device_id
@@ -93,21 +123,39 @@ fun SensorsListScreen(
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
 
-                                // Encabezado
+                                // Encabezado con nombre, estado y botón eliminar
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(sensor.name, style = MaterialTheme.typography.titleMedium)
-                                    Icon(
-                                        imageVector = if (isThisConnected) Icons.Filled.SignalWifi4Bar
-                                        else Icons.Filled.SignalWifiOff,
-                                        contentDescription = null,
-                                        tint = if (isThisConnected) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isThisConnected) Icons.Filled.SignalWifi4Bar
+                                            else Icons.Filled.SignalWifiOff,
+                                            contentDescription = null,
+                                            tint = if (isThisConnected) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(sensor.name, style = MaterialTheme.typography.titleMedium)
+                                    }
+
+                                    IconButton(
+                                        onClick = { sensorToDelete = sensor },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Delete,
+                                            contentDescription = "Eliminar sensor",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
                                 }
 
                                 Spacer(Modifier.height(2.dp))
@@ -120,12 +168,11 @@ fun SensorsListScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
 
-                                // Lecturas en tiempo real si está conectado
+                                // Lecturas BLE en tiempo real
                                 if (isThisConnected) {
                                     Spacer(Modifier.height(12.dp))
                                     HorizontalDivider()
                                     Spacer(Modifier.height(10.dp))
-
                                     Text("Lectura en tiempo real",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.primary)
@@ -167,7 +214,6 @@ fun SensorsListScreen(
         }
     }
 }
-
 
 @Composable
 private fun ReadingChip(label: String, value: String, modifier: Modifier = Modifier) {

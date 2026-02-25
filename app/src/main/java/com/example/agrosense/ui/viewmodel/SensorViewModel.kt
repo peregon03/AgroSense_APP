@@ -30,13 +30,11 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 _state.value = SensorState(isLoading = true)
-
                 val token = session.getToken()
                 if (token.isNullOrBlank()) {
                     _state.value = SensorState(error = "Sesión inválida. Inicia sesión nuevamente.")
                     return@launch
                 }
-
                 val res = ApiClient.sensorApi.createSensor(
                     auth = "Bearer $token",
                     body = CreateSensorRequest(
@@ -45,49 +43,64 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
                         location = location
                     )
                 )
-
                 _state.value = SensorState(createdSensor = res.sensor)
-
             } catch (e: Exception) {
-                val msg = if (e is HttpException) {
+                val msg = if (e is HttpException)
                     e.response()?.errorBody()?.string() ?: "Error HTTP ${e.code()}"
-                } else {
-                    e.message ?: "Error desconocido"
-                }
+                else e.message ?: "Error desconocido"
                 _state.value = SensorState(error = msg)
             }
         }
-    }
-
-    fun clear() {
-        _state.value = SensorState()
     }
 
     fun loadSensors() {
         viewModelScope.launch {
             try {
                 _state.value = _state.value.copy(isLoading = true, error = null)
-
                 val token = session.getToken()
                 if (token.isNullOrBlank()) {
                     _state.value = _state.value.copy(isLoading = false, error = "Sesión inválida.")
                     return@launch
                 }
-
                 val res = ApiClient.sensorApi.listSensors(auth = "Bearer $token")
-                // Usar lista vacía si el backend devuelve null
                 _state.value = _state.value.copy(
                     isLoading = false,
                     sensors = res.sensors ?: emptyList()
                 )
-
             } catch (e: Exception) {
                 val msg = if (e is HttpException)
                     e.response()?.errorBody()?.string() ?: "Error HTTP ${e.code()}"
                 else e.message ?: "Error cargando sensores"
-
                 _state.value = _state.value.copy(isLoading = false, error = msg)
             }
         }
+    }
+
+    fun deleteSensor(id: Int) {
+        viewModelScope.launch {
+            try {
+                _state.value = _state.value.copy(isLoading = true, error = null)
+                val token = session.getToken()
+                if (token.isNullOrBlank()) {
+                    _state.value = _state.value.copy(isLoading = false, error = "Sesión inválida.")
+                    return@launch
+                }
+                ApiClient.sensorApi.deleteSensor(auth = "Bearer $token", id = id)
+                // Quitar de la lista local inmediatamente sin recargar
+                _state.value = _state.value.copy(
+                    isLoading = false,
+                    sensors = _state.value.sensors.filter { it.id != id }
+                )
+            } catch (e: Exception) {
+                val msg = if (e is HttpException)
+                    e.response()?.errorBody()?.string() ?: "Error HTTP ${e.code()}"
+                else e.message ?: "Error eliminando sensor"
+                _state.value = _state.value.copy(isLoading = false, error = msg)
+            }
+        }
+    }
+
+    fun clear() {
+        _state.value = SensorState()
     }
 }
