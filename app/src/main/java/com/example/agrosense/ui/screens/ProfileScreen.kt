@@ -123,8 +123,8 @@ fun ProfileScreen(
         Row(modifier = Modifier.fillMaxWidth()) {
             ActionCard(
                 modifier = Modifier.weight(1f),
-                title = "Agregar sensor (Bluetooth)",
-                subtitle = "Buscar y vincular ESP32",
+                title = "Agregar sensor ",
+                subtitle = "Buscar y vincular Dispositivos",
                 icon = Icons.Filled.AddCircle,
                 onClick = onRegisterSensor // ✅ aquí navegas a BLE
             )

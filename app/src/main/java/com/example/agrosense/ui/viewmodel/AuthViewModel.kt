@@ -40,10 +40,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             val token = session.getToken()
             val logged = !token.isNullOrBlank()
             _state.value = _state.value.copy(isLoggedIn = logged)
-
-            if (logged) {
-                loadMe() // trae datos reales
-            }
+            if (logged) loadMe()
         }
     }
 
@@ -51,20 +48,12 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 _state.value = AuthState(isLoading = true)
-
                 val res = ApiClient.authApi.login(
-                    LoginRequest(
-                        email = email.trim(),
-                        password = password
-                    )
+                    LoginRequest(email = email.trim(), password = password)
                 )
-
                 session.saveToken(res.token)
                 _state.value = AuthState(isLoggedIn = true, user = res.user)
-
-                // Opcional: refrescar desde /me por si quieres la versión "oficial" de la DB
                 loadMe()
-
             } catch (e: Exception) {
                 val msg = if (e is HttpException) httpErrorMessage(e) else (e.message ?: "Error desconocido")
                 _state.value = AuthState(isLoading = false, error = msg, isLoggedIn = false)
@@ -82,24 +71,18 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 _state.value = AuthState(isLoading = true)
-
                 val res = ApiClient.authApi.register(
                     RegisterRequest(
                         first_name = nombre.trim(),
-                        last_name = apellido.trim(),
-                        email = email.trim(),
-                        password = password
+                        last_name  = apellido.trim(),
+                        email      = email.trim(),
+                        password   = password
                     )
                 )
-
                 session.saveToken(res.token)
                 _state.value = AuthState(isLoggedIn = true, user = res.user)
-
-                // Cargar datos reales desde /me
                 loadMe()
-
                 onSuccess()
-
             } catch (e: Exception) {
                 val msg = if (e is HttpException) httpErrorMessage(e) else (e.message ?: "Error desconocido")
                 _state.value = AuthState(isLoading = false, error = msg, isLoggedIn = false)
@@ -112,13 +95,9 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val token = session.getToken()
                 if (token.isNullOrBlank()) return@launch
-
-                // No bloqueamos toda la app con loading fuerte, solo actualizamos usuario
                 val res = ApiClient.userApi.me("Bearer $token")
                 _state.value = _state.value.copy(user = res.user, error = null)
-
             } catch (e: Exception) {
-                // Si token expiró o es inválido -> logout
                 if (e is HttpException && (e.code() == 401 || e.code() == 403)) {
                     logout()
                 } else {
@@ -134,5 +113,10 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             session.clear()
             _state.value = AuthState(isLoggedIn = false, user = null)
         }
+    }
+
+    // Limpia el error cuando el usuario empieza a escribir
+    fun clearError() {
+        _state.value = _state.value.copy(error = null)
     }
 }
