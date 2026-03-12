@@ -15,9 +15,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            val authVm: AuthViewModel = viewModel()
+            val authVm: AuthViewModel   = viewModel()
             val sensorVm: SensorViewModel = viewModel()
-            val bleVm: BleViewModel = viewModel()
+            val bleVm: BleViewModel     = viewModel()
 
             var screen by remember { mutableStateOf("loading") }
             val state by authVm.state.collectAsState()
@@ -38,7 +38,8 @@ class MainActivity : ComponentActivity() {
                     ProfileScreen(
                         vm = authVm,
                         onRegisterSensor = { screen = "ble" },
-                        onViewSensors = { screen = "sensors_list" }
+                        onViewSensors    = { screen = "sensors_list" },
+                        onViewCharts     = { screen = "charts" }
                     )
 
                 "ble" ->
@@ -54,6 +55,13 @@ class MainActivity : ComponentActivity() {
                         vm = sensorVm,
                         bleViewModel = bleVm,
                         onBack = { screen = "profile" }
+                    )
+
+                "charts" ->
+                    ChartsScreen(
+                        vm = sensorVm,
+                        onBack = { screen = "profile" },
+                        onGoAddSensor = { screen = "ble" }
                     )
 
                 else -> {}

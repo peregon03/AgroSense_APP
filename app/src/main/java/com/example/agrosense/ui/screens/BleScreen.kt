@@ -36,10 +36,10 @@ fun BleScreen(
     val isConnected by viewModel.isConnected.collectAsState()
     val sensorState by sensorViewModel.state.collectAsState()
 
-    // Cargar sensores ya registrados para detectar duplicados
     LaunchedEffect(Unit) { sensorViewModel.loadSensors() }
 
-    val registeredDeviceIds = sensorState.sensors.map { it.device_id }.toSet()
+    // MACs ya registradas en minúsculas para comparar correctamente
+    val registeredDeviceIds = sensorState.sensors.map { it.device_id.lowercase() }.toSet()
 
     val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
@@ -52,13 +52,13 @@ fun BleScreen(
     }
     val permissionsState = rememberMultiplePermissionsState(permissions)
 
-    var isScanning         by remember { mutableStateOf(false) }
-    var selectedDevice     by remember { mutableStateOf<BluetoothDevice?>(null) }
-    var showRegisterDialog by remember { mutableStateOf(false) }
-    var showAlreadyDialog  by remember { mutableStateOf(false) }
-    var alreadyRegisteredName by remember { mutableStateOf("") }
-    var sensorName         by remember { mutableStateOf("") }
-    var sensorLocation     by remember { mutableStateOf("") }
+    var isScanning             by remember { mutableStateOf(false) }
+    var selectedDevice         by remember { mutableStateOf<BluetoothDevice?>(null) }
+    var showRegisterDialog     by remember { mutableStateOf(false) }
+    var showAlreadyDialog      by remember { mutableStateOf(false) }
+    var alreadyRegisteredName  by remember { mutableStateOf("") }
+    var sensorName             by remember { mutableStateOf("") }
+    var sensorLocation         by remember { mutableStateOf("") }
 
     LaunchedEffect(sensorState.createdSensor) {
         if (sensorState.createdSensor != null) {
@@ -75,7 +75,7 @@ fun BleScreen(
                 navigationIcon = {
                     IconButton(onClick = {
                         viewModel.stopScan()
-                        viewModel.disconnect()
+                        // ✅ NO desconectamos al volver — la conexión sigue activa
                         onBack()
                     }) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Volver")
@@ -92,14 +92,10 @@ fun BleScreen(
                 .padding(16.dp)
         ) {
 
-            // Banner permisos
             if (!permissionsState.allPermissionsGranted) {
                 Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Se necesitan permisos de Bluetooth para escanear.")
@@ -112,17 +108,12 @@ fun BleScreen(
                 Spacer(Modifier.height(16.dp))
             }
 
-            // Banner conexión activa
             if (isConnected) {
                 Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)
                 ) {
-                    Row(modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.BluetoothConnected, contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(8.dp))
@@ -136,7 +127,6 @@ fun BleScreen(
                 Spacer(Modifier.height(12.dp))
             }
 
-            // Botones escanear / detener
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
                     onClick = {
@@ -146,8 +136,7 @@ fun BleScreen(
                             permissionsState.launchMultiplePermissionRequest()
                         }
                     },
-                    enabled = !isScanning,
-                    modifier = Modifier.weight(1f)
+                    enabled = !isScanning, modifier = Modifier.weight(1f)
                 ) {
                     Icon(Icons.Filled.BluetoothSearching, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
@@ -155,8 +144,7 @@ fun BleScreen(
                 }
                 OutlinedButton(
                     onClick = { viewModel.stopScan(); isScanning = false },
-                    enabled = isScanning,
-                    modifier = Modifier.weight(1f)
+                    enabled = isScanning, modifier = Modifier.weight(1f)
                 ) { Text("Detener") }
             }
 
@@ -164,8 +152,7 @@ fun BleScreen(
                 Spacer(Modifier.height(8.dp))
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(4.dp))
-                Text("Buscando sensores...",
-                    style = MaterialTheme.typography.bodySmall,
+                Text("Buscando sensores...", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
@@ -188,9 +175,11 @@ fun BleScreen(
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(devices, key = { it.address }) { device ->
-                        // Verificar si ya está registrado por su MAC
-                        val alreadyRegistered = registeredDeviceIds.contains(device.address)
-                        val existingSensor = sensorState.sensors.find { it.device_id == device.address }
+                        val macLower = device.address.lowercase()
+                        val alreadyRegistered = registeredDeviceIds.contains(macLower)
+                        val existingSensor = sensorState.sensors.find {
+                            it.device_id.lowercase() == macLower
+                        }
 
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -203,7 +192,6 @@ fun BleScreen(
                             onClick = {
                                 try {
                                     if (alreadyRegistered) {
-                                        // Ya registrado → mostrar info en vez de intentar registrar de nuevo
                                         alreadyRegisteredName = existingSensor?.name ?: "Este sensor"
                                         showAlreadyDialog = true
                                     } else {
@@ -236,8 +224,7 @@ fun BleScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 if (alreadyRegistered) {
-                                    Text("Registrado",
-                                        style = MaterialTheme.typography.labelSmall,
+                                    Text("Registrado", style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.secondary)
                                 }
                             }
@@ -248,19 +235,18 @@ fun BleScreen(
         }
     }
 
-    // ── Diálogo: sensor ya registrado ──────────────────────────────────────
+    // Diálogo: ya registrado
     if (showAlreadyDialog) {
         AlertDialog(
             onDismissRequest = { showAlreadyDialog = false },
             icon = { Icon(Icons.Filled.CheckCircle, contentDescription = null,
                 tint = MaterialTheme.colorScheme.secondary) },
             title = { Text("Sensor ya vinculado") },
-            text = { Text("\"$alreadyRegisteredName\" ya está registrado en tu cuenta. Puedes verlo en «Mis sensores».") },
+            text = { Text("\"$alreadyRegisteredName\" ya está registrado en tu cuenta.") },
             confirmButton = {
-                Button(onClick = {
-                    showAlreadyDialog = false
-                    onSensorRegistered() // Navegar directo a mis sensores
-                }) { Text("Ver mis sensores") }
+                Button(onClick = { showAlreadyDialog = false; onSensorRegistered() }) {
+                    Text("Ver mis sensores")
+                }
             },
             dismissButton = {
                 TextButton(onClick = { showAlreadyDialog = false }) { Text("Cerrar") }
@@ -268,11 +254,12 @@ fun BleScreen(
         )
     }
 
-    // ── Diálogo: registrar nuevo sensor ────────────────────────────────────
+    // Diálogo: registrar nuevo sensor
     if (showRegisterDialog) {
         AlertDialog(
             onDismissRequest = {
                 showRegisterDialog = false
+                // ✅ Solo desconectamos si el usuario cancela el registro
                 viewModel.disconnect()
                 selectedDevice = null
             },
@@ -280,10 +267,8 @@ fun BleScreen(
             text = {
                 Column {
                     val displayId = deviceId ?: selectedDevice?.address ?: ""
-                    Text("ID: $displayId",
-                        style = MaterialTheme.typography.bodySmall,
+                    Text("ID: $displayId", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-
                     if (deviceId == null) {
                         Spacer(Modifier.height(4.dp))
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -291,18 +276,14 @@ fun BleScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-
                     Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = sensorName, onValueChange = { sensorName = it },
+                    OutlinedTextField(value = sensorName, onValueChange = { sensorName = it },
                         label = { Text("Nombre del sensor") },
                         modifier = Modifier.fillMaxWidth(), singleLine = true)
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = sensorLocation, onValueChange = { sensorLocation = it },
+                    OutlinedTextField(value = sensorLocation, onValueChange = { sensorLocation = it },
                         label = { Text("Ubicación (opcional)") },
                         modifier = Modifier.fillMaxWidth(), singleLine = true)
-
                     sensorState.error?.let {
                         Spacer(Modifier.height(8.dp))
                         Text(it, color = MaterialTheme.colorScheme.error,
@@ -315,7 +296,7 @@ fun BleScreen(
                     onClick = {
                         val id = deviceId ?: selectedDevice?.address ?: return@Button
                         sensorViewModel.createSensor(
-                            deviceId = id,
+                            deviceId = id.lowercase(),
                             name = sensorName.trim().ifBlank { "Mi sensor" },
                             location = sensorLocation.trim().ifBlank { null }
                         )
