@@ -256,10 +256,44 @@ class BleManager(private val context: Context) {
         }
     }
 
-    // ── GATT Callbacks ───────────────────────────────────────────────────────
+    // ── Cola secuencial de suscripciones ────────────────────────────────────
+    // El stack BLE solo procesa una operación GATT a la vez.
+    // Activamos el siguiente descriptor SOLO tras confirmar el anterior
+    // en onDescriptorWrite, evitando rechazos silenciosos de Android.
+
+    private val notifyQueue = ArrayDeque<UUID>()
+    private var pendingGatt: BluetoothGatt? = null
+
+    private fun enqueueNotifications(gatt: BluetoothGatt) {
+        pendingGatt = gatt
+        notifyQueue.clear()
+        // READINGS primero — es el más crítico para ver datos en vivo
+        notifyQueue.addAll(listOf(
+            READINGS_UUID,
+            WIFI_STATUS_UUID,
+            HISTORY_DATA_UUID,
+            PUMP_UUID
+        ))
+        processNextNotification()
+    }
+
+    private fun processNextNotification() {
+        val gatt = pendingGatt ?: return
+
+        val uuid = if (notifyQueue.isNotEmpty()) notifyQueue.removeFirst() else null
+
+        if (uuid == null) {
+            Log.d(TAG, "✅ Cola de notificaciones completada")
+            return
+        }
+
+        enableNotifications(gatt, uuid)
+    }
 
     // Buffer para acumular líneas del histórico entre START y END
     private val historyBuffer = mutableListOf<String>()
+    // Buffer para reconstruir JSON de lecturas BLE
+    private var jsonBuffer = ""
 
     private val gattCallback = object : BluetoothGattCallback() {
 
@@ -279,6 +313,8 @@ class BleManager(private val context: Context) {
                     _isConnected.value  = false
                     _isConnecting.value = false
                     _reading.value      = null
+                    notifyQueue.clear()
+                    pendingGatt = null
                     try { gatt.close() } catch (e: SecurityException) {
                         Log.e(TAG, "gatt.close error", e)
                     }
@@ -301,24 +337,16 @@ class BleManager(private val context: Context) {
             Log.d(TAG, "✅ Servicio AgroSense encontrado")
 
             try {
-                // Leer device ID
+                // 1. Leer device ID
                 val deviceIdChar = service.getCharacteristic(DEVICE_ID_UUID)
                 if (deviceIdChar != null) {
                     Log.d(TAG, "Leyendo device ID...")
                     gatt.readCharacteristic(deviceIdChar)
                 }
-
-                // Suscribir todas las características con NOTIFY
-                // Pequeños delays para no saturar la cola GATT
+                // 2. Iniciar cola secuencial tras readCharacteristic
                 scope.launch {
-                    delay(300)
-                    enableNotifications(gatt, READINGS_UUID)
-                    delay(300)
-                    enableNotifications(gatt, WIFI_STATUS_UUID)
-                    delay(300)
-                    enableNotifications(gatt, HISTORY_DATA_UUID)
-                    delay(300)
-                    enableNotifications(gatt, PUMP_UUID)
+                    delay(400)
+                    enqueueNotifications(gatt)
                 }
             } catch (e: SecurityException) { Log.e(TAG, "onServicesDiscovered error", e) }
         }
@@ -328,12 +356,14 @@ class BleManager(private val context: Context) {
             descriptor: BluetoothGattDescriptor,
             status: Int
         ) {
-            Log.d(TAG, "onDescriptorWrite: status=$status uuid=${descriptor.uuid}")
+            val charUuid = descriptor.characteristic.uuid
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                Log.d(TAG, "✅ Notificaciones activadas: ${descriptor.characteristic.uuid}")
+                Log.d(TAG, "✅ Notificaciones activadas: $charUuid")
             } else {
-                Log.e(TAG, "❌ Error activando notificaciones: $status")
+                Log.e(TAG, "❌ Error activando notificaciones ($charUuid): status=$status")
             }
+            // Avanzar al siguiente UUID de la cola, independientemente del resultado
+            processNextNotification()
         }
 
         // ── onCharacteristicRead ─────────────────────────────────────────────
@@ -391,7 +421,17 @@ class BleManager(private val context: Context) {
 
         when (uuid) {
             READINGS_UUID -> {
-                _reading.value = parseReading(text)
+                jsonBuffer += text
+
+                // Si detectamos cierre de JSON
+                if (text.contains("}")) {
+                    val completeJson = jsonBuffer
+                    jsonBuffer = ""
+
+                    Log.d(TAG, "✅ JSON completo recibido: $completeJson")
+
+                    _reading.value = parseReading(completeJson)
+                }
             }
             WIFI_STATUS_UUID -> {
                 _wifiStatus.value = text

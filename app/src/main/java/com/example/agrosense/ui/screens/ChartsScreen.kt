@@ -1,5 +1,8 @@
 package com.example.agrosense.ui.screens
 
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -536,15 +539,28 @@ private fun EmptyState(onGoAddSensor: () -> Unit) {
 // ── Helpers fecha ─────────────────────────────────────────────────────────────
 
 private fun formatShortTime(iso: String): String {
-    return try { iso.substring(11, 16) } catch (e: Exception) { "" }
+    return try {
+        val dateTime = OffsetDateTime.parse(iso)
+            .atZoneSameInstant(ZoneId.of("America/Bogota"))
+
+        dateTime.format(DateTimeFormatter.ofPattern("HH:mm"))
+    } catch (e: Exception) {
+        ""
+    }
 }
 
 private fun formatFullTimestamp(iso: String): String {
     return try {
-        val clean = iso.replace("T", " ").replace("Z", "").replace(".000", "")
-        // "2024-01-15 10:30:00" → "15/01/2024  10:30"
-        val date = clean.substring(0, 10).split("-")
-        val time = clean.substring(11, 16)
-        "${date[2]}/${date[1]}/${date[0]}  $time"
-    } catch (e: Exception) { iso.take(16) }
+        val inputFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+        inputFormat.timeZone = java.util.TimeZone.getTimeZone("UTC")
+
+        val date = inputFormat.parse(iso)
+
+        val outputFormat = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm")
+        outputFormat.timeZone = java.util.TimeZone.getTimeZone("America/Bogota")
+
+        outputFormat.format(date!!)
+    } catch (e: Exception) {
+        iso.take(16)
+    }
 }

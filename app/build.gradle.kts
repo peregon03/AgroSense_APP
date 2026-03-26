@@ -40,6 +40,7 @@ android {
 }
 
 dependencies {
+
     // Retrofit + OkHttp
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.google.accompanist:accompanist-permissions:0.34.0")
@@ -69,3 +70,4 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }
+
