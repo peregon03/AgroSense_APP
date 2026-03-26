@@ -52,21 +52,15 @@ fun BleScreen(
     }
     val permissionsState = rememberMultiplePermissionsState(permissions)
 
-    var isScanning             by remember { mutableStateOf(false) }
-    var selectedDevice         by remember { mutableStateOf<BluetoothDevice?>(null) }
-    var showRegisterDialog     by remember { mutableStateOf(false) }
-    var showAlreadyDialog      by remember { mutableStateOf(false) }
-    var alreadyRegisteredName  by remember { mutableStateOf("") }
-    var sensorName             by remember { mutableStateOf("") }
-    var sensorLocation         by remember { mutableStateOf("") }
-
-    LaunchedEffect(sensorState.createdSensor) {
-        if (sensorState.createdSensor != null) {
-            showRegisterDialog = false
-            sensorViewModel.clear()
-            onSensorRegistered()
-        }
-    }
+    var isScanning            by remember { mutableStateOf(false) }
+    var selectedDevice        by remember { mutableStateOf<BluetoothDevice?>(null) }
+    var showRegisterDialog    by remember { mutableStateOf(false) }
+    var showAlreadyDialog     by remember { mutableStateOf(false) }
+    var alreadyRegisteredName by remember { mutableStateOf("") }
+    var sensorName            by remember { mutableStateOf("") }
+    var sensorLocation        by remember { mutableStateOf("") }
+    var isRegistering         by remember { mutableStateOf(false) }
+    var registerError         by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -284,7 +278,7 @@ fun BleScreen(
                     OutlinedTextField(value = sensorLocation, onValueChange = { sensorLocation = it },
                         label = { Text("Ubicación (opcional)") },
                         modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    sensorState.error?.let {
+                    registerError?.let {
                         Spacer(Modifier.height(8.dp))
                         Text(it, color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall)
@@ -295,14 +289,25 @@ fun BleScreen(
                 Button(
                     onClick = {
                         val id = deviceId ?: selectedDevice?.address ?: return@Button
-                        sensorViewModel.createSensor(
+                        isRegistering = true
+                        registerError = null
+                        sensorViewModel.registerSensor(
                             deviceId = id.lowercase(),
                             name = sensorName.trim().ifBlank { "Mi sensor" },
-                            location = sensorLocation.trim().ifBlank { null }
+                            location = sensorLocation.trim().ifBlank { null },
+                            onSuccess = {
+                                isRegistering = false
+                                showRegisterDialog = false
+                                onSensorRegistered()
+                            },
+                            onError = { msg ->
+                                isRegistering = false
+                                registerError = msg
+                            }
                         )
                     },
-                    enabled = !sensorState.isLoading
-                ) { Text(if (sensorState.isLoading) "Guardando..." else "Registrar") }
+                    enabled = !isRegistering
+                ) { Text(if (isRegistering) "Guardando..." else "Registrar") }
             },
             dismissButton = {
                 TextButton(onClick = {

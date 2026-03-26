@@ -1,40 +1,62 @@
 package com.example.agrosense.data.api
 
-import com.example.agrosense.data.model.CreateSensorRequest
-import com.example.agrosense.data.model.CreateSensorResponse
-import com.example.agrosense.data.model.ReadingsResponse
-import com.example.agrosense.data.model.SensorsResponse
-import retrofit2.http.Body
-import retrofit2.http.DELETE
-import retrofit2.http.GET
-import retrofit2.http.Header
-import retrofit2.http.POST
-import retrofit2.http.Path
-import retrofit2.http.Query
+import com.example.agrosense.data.model.Sensor
+import com.example.agrosense.data.model.SensorReading
+import retrofit2.Response
+import retrofit2.http.*
 
-interface SensorApi {
+// ── Modelos de respuesta ───────────────────────────────────────────────────
+
+data class RegisterSensorRequest(
+    val device_id: String,
+    val name: String,
+    val location: String?
+)
+
+data class RegisterSensorResponse(
+    val id: Int,
+    val device_id: String,
+    val name: String,
+    val location: String,
+    val api_key: String          // ← La app usará esto para enviarlo al ESP32
+)
+
+data class SensorsListResponse(
+    val sensors: List<Sensor>
+)
+
+data class ReadingsResponse(
+    val readings: List<SensorReading>,
+    val range: String,
+    val count: Int
+)
+
+// ── Interface Retrofit ─────────────────────────────────────────────────────
+
+interface SensorApiService {
 
     @POST("sensors")
-    suspend fun createSensor(
-        @Header("Authorization") auth: String,
-        @Body body: CreateSensorRequest
-    ): CreateSensorResponse
+    suspend fun registerSensor(
+        @Header("Authorization") token: String,
+        @Body body: RegisterSensorRequest
+    ): Response<RegisterSensorResponse>
 
     @GET("sensors")
-    suspend fun listSensors(
-        @Header("Authorization") auth: String
-    ): SensorsResponse
+    suspend fun getSensors(
+        @Header("Authorization") token: String
+    ): Response<SensorsListResponse>
 
     @DELETE("sensors/{id}")
     suspend fun deleteSensor(
-        @Header("Authorization") auth: String,
-        @Path("id") id: Int
-    ): retrofit2.Response<Unit>
+        @Header("Authorization") token: String,
+        @Path("id") sensorId: Int
+    ): Response<Unit>
 
+    // range: "today" | "week" | "month" | "quarter"
     @GET("sensors/{id}/readings")
     suspend fun getReadings(
-        @Header("Authorization") auth: String,
+        @Header("Authorization") token: String,
         @Path("id") sensorId: Int,
-        @Query("limit") limit: Int = 50
-    ): ReadingsResponse
+        @Query("range") range: String = "today"
+    ): Response<ReadingsResponse>
 }

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.SignalWifi4Bar
 import androidx.compose.material.icons.filled.SignalWifiOff
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,7 +29,8 @@ fun SensorsListScreen(
     vm: SensorViewModel,
     bleViewModel: BleViewModel,
     onBack: () -> Unit,
-    onConfigureWifi: (sensor: Sensor) -> Unit = {}
+    onConfigureWifi: (sensor: Sensor) -> Unit = {},
+    onViewCharts: (sensor: Sensor) -> Unit = {}
 ) {
     val state        by vm.state.collectAsState()
     val bleDeviceId  by bleViewModel.deviceId.collectAsState()
@@ -136,16 +138,17 @@ fun SensorsListScreen(
                         val isThisConnecting = isConnecting && !isConnected
 
                         SensorCard(
-                            sensor          = sensor,
-                            isThisConnected = isThisConnected,
+                            sensor           = sensor,
+                            isThisConnected  = isThisConnected,
                             isThisConnecting = isThisConnecting,
-                            reading         = if (isThisConnected) reading else null,
-                            pumpState       = pumpState,
-                            onConnect       = { bleViewModel.connectByAddress(sensor.device_id) },
-                            onDisconnect    = { bleViewModel.disconnect() },
-                            onPumpToggle    = { bleViewModel.controlPump(!pumpState) },
-                            onConfigureWifi = { onConfigureWifi(sensor) },
-                            onDelete        = { sensorToDelete = sensor }
+                            reading          = if (isThisConnected) reading else null,
+                            pumpState        = pumpState,
+                            onConnect        = { bleViewModel.connectByAddress(sensor.device_id) },
+                            onDisconnect     = { bleViewModel.disconnect() },
+                            onPumpToggle     = { bleViewModel.controlPump(!pumpState) },
+                            onConfigureWifi  = { onConfigureWifi(sensor) },
+                            onViewCharts     = { onViewCharts(sensor) },
+                            onDelete         = { sensorToDelete = sensor }
                         )
                     }
                 }
@@ -167,6 +170,7 @@ private fun SensorCard(
     onDisconnect: () -> Unit,
     onPumpToggle: () -> Unit,
     onConfigureWifi: () -> Unit,
+    onViewCharts: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
@@ -225,6 +229,19 @@ private fun SensorCard(
             }
 
             Spacer(Modifier.height(10.dp))
+
+            // ── Botón ver gráficas (siempre visible) ─────────────────────────
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onViewCharts,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Filled.BarChart, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Ver gráficas")
+            }
+
+            Spacer(Modifier.height(6.dp))
 
             // ── Botón conectar / desconectar ─────────────────────────────────
             if (!isThisConnected) {

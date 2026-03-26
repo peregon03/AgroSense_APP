@@ -8,7 +8,3 @@ data class SensorReading(
     val soil_humidity: Float?,
     val created_at: String
 )
-
-data class ReadingsResponse(
-    val readings: List<SensorReading>
-)

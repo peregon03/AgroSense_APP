@@ -22,8 +22,9 @@ class MainActivity : ComponentActivity() {
 
             var screen by remember { mutableStateOf("loading") }
 
-            // Sensor seleccionado para configurar WiFi
-            var wifiTargetSensor by remember { mutableStateOf<Sensor?>(null) }
+            // Sensores seleccionados para WiFi y para gráficas
+            var wifiTargetSensor   by remember { mutableStateOf<Sensor?>(null) }
+            var chartsTargetSensor by remember { mutableStateOf<Sensor?>(null) }
 
             val state by authVm.state.collectAsState()
 
@@ -44,14 +45,14 @@ class MainActivity : ComponentActivity() {
                         vm               = authVm,
                         onRegisterSensor = { screen = "ble" },
                         onViewSensors    = { screen = "sensors_list" },
-                        onViewCharts     = { screen = "charts" }
+                        onViewCharts     = { screen = "sensors_list" }
                     )
 
                 "ble" ->
                     BleScreen(
-                        viewModel       = bleVm,
-                        sensorViewModel = sensorVm,
-                        onBack          = { screen = "profile" },
+                        viewModel          = bleVm,
+                        sensorViewModel    = sensorVm,
+                        onBack             = { screen = "profile" },
                         onSensorRegistered = { screen = "sensors_list" }
                     )
 
@@ -63,6 +64,10 @@ class MainActivity : ComponentActivity() {
                         onConfigureWifi = { sensor ->
                             wifiTargetSensor = sensor
                             screen = "wifi_config"
+                        },
+                        onViewCharts = { sensor ->
+                            chartsTargetSensor = sensor
+                            screen = "charts"
                         }
                     )
 
@@ -76,17 +81,23 @@ class MainActivity : ComponentActivity() {
                             onBack       = { screen = "sensors_list" }
                         )
                     } else {
-                        // Fallback: no debería ocurrir, pero volvemos a la lista
                         LaunchedEffect(Unit) { screen = "sensors_list" }
                     }
                 }
 
-                "charts" ->
-                    ChartsScreen(
-                        vm           = sensorVm,
-                        onBack       = { screen = "profile" },
-                        onGoAddSensor = { screen = "ble" }
-                    )
+                "charts" -> {
+                    val sensor = chartsTargetSensor
+                    if (sensor != null) {
+                        ChartsScreen(
+                            sensor          = sensor,
+                            sensorViewModel = sensorVm,
+                            onBack          = { screen = "sensors_list" },
+                            onGoAddSensor   = { screen = "ble" }
+                        )
+                    } else {
+                        LaunchedEffect(Unit) { screen = "sensors_list" }
+                    }
+                }
 
                 else -> {}
             }

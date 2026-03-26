@@ -4,135 +4,161 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.agrosense.data.api.ApiClient
-import com.example.agrosense.data.model.CreateSensorRequest
+import com.example.agrosense.data.api.RegisterSensorRequest
 import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.data.model.SensorReading
 import com.example.agrosense.data.storage.SessionManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import retrofit2.HttpException
 
-data class SensorState(
+// Rangos de fecha disponibles
+enum class DateRange(val label: String, val apiValue: String) {
+    TODAY("Hoy", "today"),
+    WEEK("Última semana", "week"),
+    MONTH("Último mes", "month"),
+    QUARTER("Últimos 3 meses", "quarter")
+}
+
+data class SensorUiState(
+    val sensors: List<Sensor> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
-    val createdSensor: Sensor? = null,
-    val sensors: List<Sensor> = emptyList(),
-    // Lecturas para gráficas
+    // Lecturas / gráficas
     val readings: List<SensorReading> = emptyList(),
     val isLoadingReadings: Boolean = false,
-    val readingsError: String? = null
+    val readingsError: String? = null,
+    val selectedRange: DateRange = DateRange.TODAY,
+    val readingsCount: Int = 0
 )
 
 class SensorViewModel(app: Application) : AndroidViewModel(app) {
 
     private val session = SessionManager(app.applicationContext)
+    private val api = ApiClient.sensorApi
 
-    private val _state = MutableStateFlow(SensorState())
-    val state: StateFlow<SensorState> = _state
+    private val _state = MutableStateFlow(SensorUiState())
+    val state: StateFlow<SensorUiState> = _state
 
-    fun createSensor(deviceId: String, name: String, location: String?) {
-        viewModelScope.launch {
-            try {
-                _state.value = SensorState(isLoading = true)
-                val token = session.getToken()
-                if (token.isNullOrBlank()) {
-                    _state.value = SensorState(error = "Sesión inválida. Inicia sesión nuevamente.")
-                    return@launch
-                }
-                val res = ApiClient.sensorApi.createSensor(
-                    auth = "Bearer $token",
-                    body = CreateSensorRequest(
-                        device_id = deviceId.trim(),
-                        name = name.trim(),
-                        location = location
-                    )
-                )
-                _state.value = SensorState(createdSensor = res.sensor)
-            } catch (e: Exception) {
-                val msg = if (e is HttpException)
-                    e.response()?.errorBody()?.string() ?: "Error HTTP ${e.code()}"
-                else e.message ?: "Error desconocido"
-                _state.value = SensorState(error = msg)
-            }
-        }
-    }
+    // ── Cargar lista de sensores ───────────────────────────────────────────
 
     fun loadSensors() {
         viewModelScope.launch {
+            _state.value = _state.value.copy(isLoading = true, error = null)
             try {
-                _state.value = _state.value.copy(isLoading = true, error = null)
-                val token = session.getToken()
-                if (token.isNullOrBlank()) {
-                    _state.value = _state.value.copy(isLoading = false, error = "Sesión inválida.")
-                    return@launch
+                val token = session.getToken() ?: return@launch
+                val response = api.getSensors("Bearer $token")
+                if (response.isSuccessful) {
+                    _state.value = _state.value.copy(
+                        sensors = response.body()?.sensors ?: emptyList(),
+                        isLoading = false
+                    )
+                } else {
+                    _state.value = _state.value.copy(
+                        error = "Error al cargar sensores",
+                        isLoading = false
+                    )
                 }
-                val res = ApiClient.sensorApi.listSensors(auth = "Bearer $token")
-                _state.value = _state.value.copy(
-                    isLoading = false,
-                    sensors = res.sensors ?: emptyList()
-                )
             } catch (e: Exception) {
-                val msg = if (e is HttpException)
-                    e.response()?.errorBody()?.string() ?: "Error HTTP ${e.code()}"
-                else e.message ?: "Error cargando sensores"
-                _state.value = _state.value.copy(isLoading = false, error = msg)
+                _state.value = _state.value.copy(
+                    error = "Error de conexión",
+                    isLoading = false
+                )
             }
         }
     }
 
-    fun deleteSensor(id: Int) {
+    // ── Registrar sensor ───────────────────────────────────────────────────
+    // Devuelve la api_key para que BleScreen la envíe al ESP32
+
+    fun registerSensor(
+        deviceId: String,
+        name: String,
+        location: String?,
+        onSuccess: (apiKey: String) -> Unit,
+        onError: (String) -> Unit
+    ) {
         viewModelScope.launch {
             try {
-                _state.value = _state.value.copy(isLoading = true, error = null)
                 val token = session.getToken()
-                if (token.isNullOrBlank()) {
-                    _state.value = _state.value.copy(isLoading = false, error = "Sesión inválida.")
-                    return@launch
-                }
-                ApiClient.sensorApi.deleteSensor(auth = "Bearer $token", id = id)
-                _state.value = _state.value.copy(
-                    isLoading = false,
-                    sensors = _state.value.sensors.filter { it.id != id }
+                    ?: run { onError("No hay sesión activa"); return@launch }
+                val response = api.registerSensor(
+                    "Bearer $token",
+                    RegisterSensorRequest(deviceId, name, location)
                 )
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    if (body != null) onSuccess(body.api_key)
+                    else onError("Respuesta vacía del servidor")
+                } else {
+                    onError("Error al registrar: ${response.code()}")
+                }
             } catch (e: Exception) {
-                val msg = if (e is HttpException)
-                    e.response()?.errorBody()?.string() ?: "Error HTTP ${e.code()}"
-                else e.message ?: "Error eliminando sensor"
-                _state.value = _state.value.copy(isLoading = false, error = msg)
+                onError("Error de conexión: ${e.message}")
             }
         }
     }
 
-    fun loadReadings(sensorId: Int, limit: Int = 50) {
+    // ── Eliminar sensor ────────────────────────────────────────────────────
+
+    fun deleteSensor(sensorId: Int, onSuccess: () -> Unit = {}) {
         viewModelScope.launch {
             try {
-                _state.value = _state.value.copy(isLoadingReadings = true, readingsError = null)
-                val token = session.getToken()
-                if (token.isNullOrBlank()) {
-                    _state.value = _state.value.copy(isLoadingReadings = false, readingsError = "Sesión inválida.")
-                    return@launch
+                val token = session.getToken() ?: return@launch
+                val response = api.deleteSensor("Bearer $token", sensorId)
+                if (response.isSuccessful) {
+                    _state.value = _state.value.copy(
+                        sensors = _state.value.sensors.filter { it.id != sensorId }
+                    )
+                    onSuccess()
                 }
-                val res = ApiClient.sensorApi.getReadings(
-                    auth = "Bearer $token",
-                    sensorId = sensorId,
-                    limit = limit
-                )
-                // Backend devuelve DESC — invertimos para graficar cronológicamente
-                _state.value = _state.value.copy(
-                    isLoadingReadings = false,
-                    readings = res.readings.reversed()
-                )
             } catch (e: Exception) {
-                val msg = if (e is HttpException)
-                    e.response()?.errorBody()?.string() ?: "Error HTTP ${e.code()}"
-                else e.message ?: "Error cargando lecturas"
-                _state.value = _state.value.copy(isLoadingReadings = false, readingsError = msg)
+                _state.value = _state.value.copy(error = "Error al eliminar sensor")
             }
         }
     }
 
-    fun clear() {
-        _state.value = SensorState()
+    // ── Cambiar rango de fecha y recargar lecturas ─────────────────────────
+
+    fun selectRange(sensorId: Int, range: DateRange) {
+        _state.value = _state.value.copy(selectedRange = range)
+        loadReadings(sensorId, range)
+    }
+
+    // ── Cargar lecturas por rango ──────────────────────────────────────────
+
+    fun loadReadings(sensorId: Int, range: DateRange = _state.value.selectedRange) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                isLoadingReadings = true,
+                readingsError = null
+            )
+            try {
+                val token = session.getToken() ?: return@launch
+                val response = api.getReadings("Bearer $token", sensorId, range.apiValue)
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    _state.value = _state.value.copy(
+                        readings = body?.readings ?: emptyList(),
+                        readingsCount = body?.count ?: 0,
+                        isLoadingReadings = false
+                    )
+                } else {
+                    _state.value = _state.value.copy(
+                        readingsError = "Error al cargar datos",
+                        isLoadingReadings = false
+                    )
+                }
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    readingsError = "Error de conexión",
+                    isLoadingReadings = false
+                )
+            }
+        }
+    }
+
+    fun clearError() {
+        _state.value = _state.value.copy(error = null)
     }
 }
