@@ -8,9 +8,9 @@ import java.util.concurrent.TimeUnit
 
 object ApiClient {
 
-    private const val AUTH_BASE_URL = "https://agrosense-backend-production.up.railway.app/api/auth/"
-    private const val USERS_BASE_URL = "https://agrosense-backend-production.up.railway.app/api/users/"
-    private const val API_BASE_URL = "https://agrosense-backend-production.up.railway.app/api/"
+    private const val AUTH_BASE_URL  = "http://3.15.133.197:3000/api/auth/"
+    private const val USERS_BASE_URL = "http://3.15.133.197:3000/api/users/"
+    private const val API_BASE_URL   = "http://3.15.133.197:3000/api/"
 
     private val client: OkHttpClient by lazy {
         val logging = HttpLoggingInterceptor().apply {

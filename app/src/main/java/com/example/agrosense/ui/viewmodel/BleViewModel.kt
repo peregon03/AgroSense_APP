@@ -9,21 +9,44 @@ class BleViewModel(app: Application) : AndroidViewModel(app) {
 
     private val manager = BleManager(app.applicationContext)
 
+    // ── States existentes ────────────────────────────────────────────────────
     val devices      = manager.devices
     val deviceId     = manager.deviceId
     val reading      = manager.reading
     val isConnected  = manager.isConnected
     val isConnecting = manager.isConnecting
 
-    fun startScan() = manager.startScan()
-    fun stopScan()  = manager.stopScan()
+    // ── Nuevos states ────────────────────────────────────────────────────────
+    val wifiStatus  = manager.wifiStatus   // "NOT_CONFIGURED"|"CONNECTING"|"CONNECTED"|"ERROR:..."
+    val historyData = manager.historyData  // List<String> de líneas JSON recibidas
+    val pumpState   = manager.pumpState    // true = bomba encendida
 
-    fun connect(device: BluetoothDevice) = manager.connect(device)
+    // ── Funciones existentes ─────────────────────────────────────────────────
+    fun startScan()                        = manager.startScan()
+    fun stopScan()                         = manager.stopScan()
+    fun connect(device: BluetoothDevice)   = manager.connect(device)
+    fun connectByAddress(mac: String)      = manager.connectByAddress(mac)
+    fun disconnect()                       = manager.disconnect()
 
-    // Conectar directamente por MAC sin escanear (para SensorsListScreen)
-    fun connectByAddress(macAddress: String) = manager.connectByAddress(macAddress)
+    // ── Nuevas funciones ─────────────────────────────────────────────────────
 
-    fun disconnect() = manager.disconnect()
+    /**
+     * Envía credenciales WiFi + API key al ESP32 vía BLE.
+     * El ESP32 se conectará al WiFi y empezará a enviar datos a AWS.
+     */
+    fun sendWifiConfig(ssid: String, password: String, apiKey: String) =
+        manager.sendWifiConfig(ssid, password, apiKey)
+
+    /**
+     * Enciende (true) o apaga (false) la bomba/LED del ESP32.
+     */
+    fun controlPump(on: Boolean) = manager.controlPump(on)
+
+    /**
+     * Solicita el histórico almacenado en el SPIFFS del ESP32.
+     * Los datos llegarán en historyData StateFlow.
+     */
+    fun requestHistory() = manager.requestHistory()
 
     override fun onCleared() {
         super.onCleared()

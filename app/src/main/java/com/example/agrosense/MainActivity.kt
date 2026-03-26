@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.ui.screens.*
 import com.example.agrosense.ui.viewmodel.AuthViewModel
 import com.example.agrosense.ui.viewmodel.BleViewModel
@@ -15,11 +16,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            val authVm: AuthViewModel   = viewModel()
+            val authVm: AuthViewModel     = viewModel()
             val sensorVm: SensorViewModel = viewModel()
-            val bleVm: BleViewModel     = viewModel()
+            val bleVm: BleViewModel       = viewModel()
 
             var screen by remember { mutableStateOf("loading") }
+
+            // Sensor seleccionado para configurar WiFi
+            var wifiTargetSensor by remember { mutableStateOf<Sensor?>(null) }
+
             val state by authVm.state.collectAsState()
 
             LaunchedEffect(Unit) { authVm.checkSession() }
@@ -36,7 +41,7 @@ class MainActivity : ComponentActivity() {
 
                 "profile" ->
                     ProfileScreen(
-                        vm = authVm,
+                        vm               = authVm,
                         onRegisterSensor = { screen = "ble" },
                         onViewSensors    = { screen = "sensors_list" },
                         onViewCharts     = { screen = "charts" }
@@ -44,23 +49,42 @@ class MainActivity : ComponentActivity() {
 
                 "ble" ->
                     BleScreen(
-                        viewModel = bleVm,
+                        viewModel       = bleVm,
                         sensorViewModel = sensorVm,
-                        onBack = { screen = "profile" },
+                        onBack          = { screen = "profile" },
                         onSensorRegistered = { screen = "sensors_list" }
                     )
 
                 "sensors_list" ->
                     SensorsListScreen(
-                        vm = sensorVm,
-                        bleViewModel = bleVm,
-                        onBack = { screen = "profile" }
+                        vm              = sensorVm,
+                        bleViewModel    = bleVm,
+                        onBack          = { screen = "profile" },
+                        onConfigureWifi = { sensor ->
+                            wifiTargetSensor = sensor
+                            screen = "wifi_config"
+                        }
                     )
+
+                "wifi_config" -> {
+                    val sensor = wifiTargetSensor
+                    if (sensor != null) {
+                        WifiConfigScreen(
+                            bleViewModel = bleVm,
+                            sensorName   = sensor.name,
+                            apiKey       = sensor.api_key ?: "",
+                            onBack       = { screen = "sensors_list" }
+                        )
+                    } else {
+                        // Fallback: no debería ocurrir, pero volvemos a la lista
+                        LaunchedEffect(Unit) { screen = "sensors_list" }
+                    }
+                }
 
                 "charts" ->
                     ChartsScreen(
-                        vm = sensorVm,
-                        onBack = { screen = "profile" },
+                        vm           = sensorVm,
+                        onBack       = { screen = "profile" },
                         onGoAddSensor = { screen = "ble" }
                     )
 
