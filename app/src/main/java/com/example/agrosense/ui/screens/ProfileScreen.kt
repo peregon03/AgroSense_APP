@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,11 +24,12 @@ import com.example.agrosense.ui.viewmodel.AuthViewModel
 @Composable
 fun ProfileScreen(
     vm: AuthViewModel,
-    // ✅ este callback lo usas para navegar a la pantalla BLE ("ble")
     onRegisterSensor: () -> Unit = {},
     onViewSensors: () -> Unit = {},
     onViewCharts: () -> Unit = {},
-    onEditProfile: () -> Unit = {}
+    onEditProfile: () -> Unit = {},
+    onViewAlerts: () -> Unit = {},
+    alertUnreadCount: Int = 0
 ) {
     val state by vm.state.collectAsState()
     val user = state.user
@@ -119,14 +121,14 @@ fun ProfileScreen(
 
         Spacer(Modifier.height(10.dp))
 
-        // Grid de botones (2x2)
+        // Fila 1: Agregar sensor + Ver sensores
         Row(modifier = Modifier.fillMaxWidth()) {
             ActionCard(
                 modifier = Modifier.weight(1f),
-                title = "Agregar sensor ",
-                subtitle = "Buscar y vincular Dispositivos",
+                title = "Agregar sensor",
+                subtitle = "Buscar y vincular dispositivos",
                 icon = Icons.Filled.AddCircle,
-                onClick = onRegisterSensor // ✅ aquí navegas a BLE
+                onClick = onRegisterSensor
             )
             Spacer(Modifier.width(12.dp))
             ActionCard(
@@ -140,6 +142,7 @@ fun ProfileScreen(
 
         Spacer(Modifier.height(12.dp))
 
+        // Fila 2: Datos y gráficas + Editar perfil
         Row(modifier = Modifier.fillMaxWidth()) {
             ActionCard(
                 modifier = Modifier.weight(1f),
@@ -157,6 +160,15 @@ fun ProfileScreen(
                 onClick = onEditProfile
             )
         }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Fila 3: Alertas (ancho completo con badge de no leídas)
+        AlertsActionCard(
+            modifier = Modifier.fillMaxWidth(),
+            unreadCount = alertUnreadCount,
+            onClick = onViewAlerts
+        )
 
         Spacer(Modifier.height(20.dp))
 
@@ -183,6 +195,65 @@ fun ProfileScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )
+    }
+}
+
+@Composable
+private fun AlertsActionCard(
+    modifier: Modifier = Modifier,
+    unreadCount: Int,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.NotificationsActive,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Alertas",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "Notificaciones de umbrales",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (unreadCount > 0) {
+                Badge(
+                    containerColor = MaterialTheme.colorScheme.error
+                ) {
+                    Text("$unreadCount")
+                }
+            }
+        }
     }
 }
 

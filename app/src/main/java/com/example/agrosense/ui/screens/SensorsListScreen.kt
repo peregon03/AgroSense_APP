@@ -6,13 +6,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.SignalWifi4Bar
 import androidx.compose.material.icons.filled.SignalWifiOff
 import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,6 +31,7 @@ fun SensorsListScreen(
     bleViewModel: BleViewModel,
     onBack: () -> Unit,
     onConfigureWifi: (sensor: Sensor) -> Unit = {},
+    onConfigureAlerts: (sensor: Sensor) -> Unit = {},
     onViewCharts: (sensor: Sensor) -> Unit = {}
 ) {
     val state        by vm.state.collectAsState()
@@ -147,6 +149,7 @@ fun SensorsListScreen(
                             onDisconnect     = { bleViewModel.disconnect() },
                             onPumpToggle     = { bleViewModel.controlPump(!pumpState) },
                             onConfigureWifi  = { onConfigureWifi(sensor) },
+                            onConfigureAlerts = { onConfigureAlerts(sensor) },
                             onViewCharts     = { onViewCharts(sensor) },
                             onDelete         = { sensorToDelete = sensor }
                         )
@@ -170,6 +173,7 @@ private fun SensorCard(
     onDisconnect: () -> Unit,
     onPumpToggle: () -> Unit,
     onConfigureWifi: () -> Unit,
+    onConfigureAlerts: () -> Unit,
     onViewCharts: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -230,15 +234,27 @@ private fun SensorCard(
 
             Spacer(Modifier.height(10.dp))
 
-            // ── Botón ver gráficas (siempre visible) ─────────────────────────
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = onViewCharts,
-                modifier = Modifier.fillMaxWidth()
+            // ── Acciones siempre visibles: gráficas + alertas ────────────────
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Filled.BarChart, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Ver gráficas")
+                OutlinedButton(
+                    onClick = onViewCharts,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.BarChart, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Gráficas")
+                }
+                OutlinedButton(
+                    onClick = onConfigureAlerts,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.NotificationsActive, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Alertas")
+                }
             }
 
             Spacer(Modifier.height(6.dp))
@@ -287,7 +303,6 @@ private fun SensorCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Botón bomba toggle
                     Button(
                         onClick = onPumpToggle,
                         modifier = Modifier.weight(1f),
@@ -311,7 +326,6 @@ private fun SensorCard(
                         Text(if (pumpState) "Bomba ON" else "Bomba OFF")
                     }
 
-                    // Botón configurar WiFi
                     OutlinedButton(
                         onClick = onConfigureWifi,
                         modifier = Modifier.weight(1f)

@@ -7,6 +7,7 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.ui.screens.*
+import com.example.agrosense.ui.viewmodel.AlertViewModel
 import com.example.agrosense.ui.viewmodel.AuthViewModel
 import com.example.agrosense.ui.viewmodel.BleViewModel
 import com.example.agrosense.ui.viewmodel.SensorViewModel
@@ -19,12 +20,14 @@ class MainActivity : ComponentActivity() {
             val authVm: AuthViewModel     = viewModel()
             val sensorVm: SensorViewModel = viewModel()
             val bleVm: BleViewModel       = viewModel()
+            val alertVm: AlertViewModel   = viewModel()
 
             var screen by remember { mutableStateOf("loading") }
 
             // Sensores seleccionados para WiFi y para gráficas
             var wifiTargetSensor    by remember { mutableStateOf<Sensor?>(null) }
             var chartsTargetSensor  by remember { mutableStateOf<Sensor?>(null) }
+            var alertTargetSensor   by remember { mutableStateOf<Sensor?>(null) }
             // WiFi config cuando viene directo desde BLE (sin objeto Sensor completo)
             var pendingWifiName     by remember { mutableStateOf("") }
             var pendingWifiApiKey   by remember { mutableStateOf("") }
@@ -32,10 +35,12 @@ class MainActivity : ComponentActivity() {
             var pendingEmail        by remember { mutableStateOf("") }
 
             val state by authVm.state.collectAsState()
+            val alertState by alertVm.state.collectAsState()
 
             LaunchedEffect(Unit) { authVm.checkSession() }
             LaunchedEffect(state.isLoggedIn) {
                 screen = if (state.isLoggedIn) "profile" else "login"
+                if (state.isLoggedIn) alertVm.loadAlerts()
             }
 
             when (screen) {
@@ -60,7 +65,9 @@ class MainActivity : ComponentActivity() {
                         onRegisterSensor = { screen = "ble" },
                         onViewSensors    = { screen = "sensors_list" },
                         onViewCharts     = { screen = "sensors_list" },
-                        onEditProfile    = { screen = "edit_profile" }
+                        onEditProfile    = { screen = "edit_profile" },
+                        onViewAlerts     = { screen = "alerts" },
+                        alertUnreadCount = alertState.unreadCount
                     )
 
                 "ble" ->
@@ -70,13 +77,11 @@ class MainActivity : ComponentActivity() {
                         onBack             = { screen = "profile" },
                         onSensorRegistered = { sensorName, apiKey ->
                             if (apiKey.isNotEmpty()) {
-                                // Registro nuevo: ir directo a configurar WiFi con la api_key fresca
                                 wifiTargetSensor  = null
                                 pendingWifiName   = sensorName
                                 pendingWifiApiKey = apiKey
                                 screen = "wifi_config"
                             } else {
-                                // Sensor ya existente: ir a lista
                                 screen = "sensors_list"
                             }
                         }
@@ -84,12 +89,16 @@ class MainActivity : ComponentActivity() {
 
                 "sensors_list" ->
                     SensorsListScreen(
-                        vm              = sensorVm,
-                        bleViewModel    = bleVm,
-                        onBack          = { screen = "profile" },
-                        onConfigureWifi = { sensor ->
+                        vm                = sensorVm,
+                        bleViewModel      = bleVm,
+                        onBack            = { screen = "profile" },
+                        onConfigureWifi   = { sensor ->
                             wifiTargetSensor = sensor
                             screen = "wifi_config"
+                        },
+                        onConfigureAlerts = { sensor ->
+                            alertTargetSensor = sensor
+                            screen = "alert_config"
                         },
                         onViewCharts = { sensor ->
                             chartsTargetSensor = sensor
@@ -116,6 +125,25 @@ class MainActivity : ComponentActivity() {
                         LaunchedEffect(Unit) { screen = "sensors_list" }
                     }
                 }
+
+                "alert_config" -> {
+                    val sensor = alertTargetSensor
+                    if (sensor != null) {
+                        AlertConfigScreen(
+                            sensor          = sensor,
+                            sensorViewModel = sensorVm,
+                            onBack          = { screen = "sensors_list" }
+                        )
+                    } else {
+                        LaunchedEffect(Unit) { screen = "sensors_list" }
+                    }
+                }
+
+                "alerts" ->
+                    AlertsScreen(
+                        vm     = alertVm,
+                        onBack = { screen = "profile" }
+                    )
 
                 "charts" -> {
                     val sensor = chartsTargetSensor

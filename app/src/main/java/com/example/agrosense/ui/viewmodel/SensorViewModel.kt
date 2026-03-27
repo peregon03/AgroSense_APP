@@ -7,6 +7,7 @@ import com.example.agrosense.data.api.ApiClient
 import com.example.agrosense.data.api.RegisterSensorRequest
 import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.data.model.SensorReading
+import com.example.agrosense.data.model.ThresholdsRequest
 import com.example.agrosense.data.storage.SessionManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -114,6 +115,31 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 _state.value = _state.value.copy(error = "Error al eliminar sensor")
+            }
+        }
+    }
+
+    // ── Guardar umbrales de alerta ─────────────────────────────────────────
+
+    fun saveThresholds(
+        sensorId: Int,
+        request: ThresholdsRequest,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val token = session.getToken()
+                    ?: run { onError("No hay sesión activa"); return@launch }
+                val response = api.updateThresholds("Bearer $token", sensorId, request)
+                if (response.isSuccessful) {
+                    loadSensors() // Refrescar lista con nuevos umbrales
+                    onSuccess()
+                } else {
+                    onError("Error al guardar: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                onError("Error de conexión: ${e.message}")
             }
         }
     }

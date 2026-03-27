@@ -5,5 +5,11 @@ data class Sensor(
     val device_id: String,
     val name: String,
     val location: String?,
-    val api_key: String?
+    val api_key: String?,
+    val temp_min: Float? = null,
+    val temp_max: Float? = null,
+    val air_hum_min: Float? = null,
+    val air_hum_max: Float? = null,
+    val soil_hum_min: Float? = null,
+    val soil_hum_max: Float? = null
 )

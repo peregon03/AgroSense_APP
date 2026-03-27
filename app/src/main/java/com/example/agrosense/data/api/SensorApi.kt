@@ -2,6 +2,8 @@ package com.example.agrosense.data.api
 
 import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.data.model.SensorReading
+import com.example.agrosense.data.model.ThresholdsRequest
+import com.example.agrosense.data.model.ThresholdsResponse
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -56,6 +58,13 @@ interface SensorApiService {
         @Header("Authorization") token: String,
         @Path("id") sensorId: Int
     ): Response<Unit>
+
+    @PUT("sensors/{id}/thresholds")
+    suspend fun updateThresholds(
+        @Header("Authorization") token: String,
+        @Path("id") sensorId: Int,
+        @Body body: ThresholdsRequest
+    ): Response<ThresholdsResponse>
 
     // range: "today" | "week" | "month" | "quarter"
     @GET("sensors/{id}/readings")
