@@ -32,7 +32,8 @@ import com.example.agrosense.ui.viewmodel.AuthViewModel
 @Composable
 fun RegisterScreen(
     vm: AuthViewModel,
-    onBackToLogin: () -> Unit
+    onBackToLogin: () -> Unit,
+    onVerifyEmail: (email: String) -> Unit = {}
 ) {
     var nombre       by remember { mutableStateOf("") }
     var apellido     by remember { mutableStateOf("") }
@@ -157,7 +158,7 @@ fun RegisterScreen(
                 keyboardActions = KeyboardActions(
                     onDone = {
                         focusManager.clearFocus()
-                        vm.register(nombre, apellido, email, pass) { onBackToLogin() }
+                        vm.register(nombre, apellido, email, pass, onNeedsVerification = onVerifyEmail)
                     }
                 ),
                 isError = state.error != null,
@@ -199,7 +200,7 @@ fun RegisterScreen(
             Button(
                 onClick = {
                     focusManager.clearFocus()
-                    vm.register(nombre, apellido, email, pass) { onBackToLogin() }
+                    vm.register(nombre, apellido, email, pass, onNeedsVerification = onVerifyEmail)
                 },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 enabled = !state.isLoading &&

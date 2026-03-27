@@ -38,3 +38,9 @@ data class ChangePasswordRequest(
     val current_password: String,
     val new_password: String
 )
+
+data class PendingEmailResponse(val email: String)
+data class VerifyEmailRequest(val email: String, val code: String)
+data class ForgotPasswordRequest(val email: String)
+data class ResetPasswordRequest(val email: String, val code: String, val new_password: String)
+data class ResendCodeRequest(val email: String, val type: String)

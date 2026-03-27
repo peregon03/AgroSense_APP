@@ -48,6 +48,12 @@ class BleViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun requestHistory() = manager.requestHistory()
 
+    /**
+     * Borra la configuración guardada en NVS del ESP32.
+     * Útil para re-configurar un dispositivo que ya tenía credenciales.
+     */
+    fun resetDevice() = manager.resetDevice()
+
     override fun onCleared() {
         super.onCleared()
         manager.disconnect()

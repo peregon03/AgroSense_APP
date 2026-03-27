@@ -88,7 +88,7 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 if (response.isSuccessful) {
                     val body = response.body()
-                    if (body != null) onSuccess(body.api_key)
+                    if (body != null) onSuccess(body.sensor.api_key)
                     else onError("Respuesta vacía del servidor")
                 } else {
                     onError("Error al registrar: ${response.code()}")

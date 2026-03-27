@@ -201,6 +201,15 @@ class BleManager(private val context: Context) {
         Log.d(TAG, "requestHistory: GET enviado")
     }
 
+    /**
+     * Borra la configuración guardada en NVS del ESP32 (ssid, password, api_key).
+     * El ESP32 responderá con "RESET_OK" en el WiFiStatus characteristic.
+     */
+    fun resetDevice() {
+        writeCharacteristic(WIFI_CONFIG_UUID, "RESET")
+        Log.d(TAG, "resetDevice: RESET enviado")
+    }
+
     // ── Helper: escribir en una característica por UUID ──────────────────────
 
     private fun writeCharacteristic(uuid: UUID, value: String) {

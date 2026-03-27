@@ -13,12 +13,17 @@ data class RegisterSensorRequest(
     val location: String?
 )
 
+// El servidor devuelve { sensor: { ... } }
 data class RegisterSensorResponse(
+    val sensor: RegisteredSensor
+)
+
+data class RegisteredSensor(
     val id: Int,
     val device_id: String,
     val name: String,
-    val location: String,
-    val api_key: String          // ← La app usará esto para enviarlo al ESP32
+    val location: String?,
+    val api_key: String
 )
 
 data class SensorsListResponse(

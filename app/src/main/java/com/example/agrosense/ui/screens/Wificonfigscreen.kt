@@ -160,6 +160,19 @@ fun WifiConfigScreen(
 
             Spacer(Modifier.height(24.dp))
 
+            // ── Botón borrar config guardada (para re-configurar) ────────────
+            if (isConnected) {
+                OutlinedButton(
+                    onClick = { bleViewModel.resetDevice() },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    enabled = !statusInfo.isLoading
+                ) {
+                    Text("Borrar configuración guardada en el sensor")
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+
             // ── Botón enviar ─────────────────────────────────────────────────
             Button(
                 onClick = {
@@ -190,7 +203,7 @@ fun WifiConfigScreen(
             }
 
             // ── Estado / feedback ────────────────────────────────────────────
-            if (wasSent && statusInfo.message.isNotEmpty()) {
+            if ((wasSent || wifiStatus == "RESET_OK") && statusInfo.message.isNotEmpty()) {
                 Spacer(Modifier.height(20.dp))
                 Card(
                     colors = CardDefaults.cardColors(
@@ -266,6 +279,16 @@ private fun rememberWifiStatusInfo(status: String, wasSent: Boolean): WifiStatus
 
     return remember(status, wasSent) {
         when {
+            status == "RESET_OK" -> WifiStatusInfo(
+                title          = "Configuración borrada",
+                message        = "El sensor está limpio. Ahora ingresa los datos de la red y envía.",
+                isLoading      = false,
+                isSuccess      = false,
+                containerColor = colorScheme.secondaryContainer,
+                iconTint       = colorScheme.secondary,
+                textColor      = colorScheme.onSecondaryContainer,
+                icon           = Icons.Filled.Wifi
+            )
             !wasSent || status == "NOT_CONFIGURED" -> WifiStatusInfo(
                 title          = "",
                 message        = "",

@@ -23,8 +23,13 @@ class MainActivity : ComponentActivity() {
             var screen by remember { mutableStateOf("loading") }
 
             // Sensores seleccionados para WiFi y para gráficas
-            var wifiTargetSensor   by remember { mutableStateOf<Sensor?>(null) }
-            var chartsTargetSensor by remember { mutableStateOf<Sensor?>(null) }
+            var wifiTargetSensor    by remember { mutableStateOf<Sensor?>(null) }
+            var chartsTargetSensor  by remember { mutableStateOf<Sensor?>(null) }
+            // WiFi config cuando viene directo desde BLE (sin objeto Sensor completo)
+            var pendingWifiName     by remember { mutableStateOf("") }
+            var pendingWifiApiKey   by remember { mutableStateOf("") }
+            // Email pendiente de verificación o recuperación
+            var pendingEmail        by remember { mutableStateOf("") }
 
             val state by authVm.state.collectAsState()
 
@@ -35,10 +40,19 @@ class MainActivity : ComponentActivity() {
 
             when (screen) {
                 "login" ->
-                    LoginScreen(authVm, onGoRegister = { screen = "register" })
+                    LoginScreen(
+                        vm                  = authVm,
+                        onGoRegister        = { screen = "register" },
+                        onForgotPassword    = { screen = "forgot_password" },
+                        onNeedsVerification = { email -> pendingEmail = email; screen = "verify_email" }
+                    )
 
                 "register" ->
-                    RegisterScreen(authVm, onBackToLogin = { screen = "login" })
+                    RegisterScreen(
+                        vm            = authVm,
+                        onBackToLogin = { screen = "login" },
+                        onVerifyEmail = { email -> pendingEmail = email; screen = "verify_email" }
+                    )
 
                 "profile" ->
                     ProfileScreen(
@@ -54,7 +68,18 @@ class MainActivity : ComponentActivity() {
                         viewModel          = bleVm,
                         sensorViewModel    = sensorVm,
                         onBack             = { screen = "profile" },
-                        onSensorRegistered = { screen = "sensors_list" }
+                        onSensorRegistered = { sensorName, apiKey ->
+                            if (apiKey.isNotEmpty()) {
+                                // Registro nuevo: ir directo a configurar WiFi con la api_key fresca
+                                wifiTargetSensor  = null
+                                pendingWifiName   = sensorName
+                                pendingWifiApiKey = apiKey
+                                screen = "wifi_config"
+                            } else {
+                                // Sensor ya existente: ir a lista
+                                screen = "sensors_list"
+                            }
+                        }
                     )
 
                 "sensors_list" ->
@@ -74,12 +99,18 @@ class MainActivity : ComponentActivity() {
 
                 "wifi_config" -> {
                     val sensor = wifiTargetSensor
-                    if (sensor != null) {
+                    val wifiName   = sensor?.name   ?: pendingWifiName
+                    val wifiApiKey = sensor?.api_key ?: pendingWifiApiKey
+                    if (wifiName.isNotEmpty() && wifiApiKey.isNotEmpty()) {
                         WifiConfigScreen(
                             bleViewModel = bleVm,
-                            sensorName   = sensor.name,
-                            apiKey       = sensor.api_key ?: "",
-                            onBack       = { screen = "sensors_list" }
+                            sensorName   = wifiName,
+                            apiKey       = wifiApiKey,
+                            onBack       = {
+                                pendingWifiName   = ""
+                                pendingWifiApiKey = ""
+                                screen = "sensors_list"
+                            }
                         )
                     } else {
                         LaunchedEffect(Unit) { screen = "sensors_list" }
@@ -104,6 +135,29 @@ class MainActivity : ComponentActivity() {
                     EditProfileScreen(
                         vm     = authVm,
                         onBack = { screen = "profile" }
+                    )
+
+                "verify_email" ->
+                    VerifyEmailScreen(
+                        vm        = authVm,
+                        email     = pendingEmail,
+                        onSuccess = { screen = "profile" },
+                        onBack    = { screen = "login" }
+                    )
+
+                "forgot_password" ->
+                    ForgotPasswordScreen(
+                        vm         = authVm,
+                        onCodeSent = { email -> pendingEmail = email; screen = "reset_password" },
+                        onBack     = { screen = "login" }
+                    )
+
+                "reset_password" ->
+                    ResetPasswordScreen(
+                        vm        = authVm,
+                        email     = pendingEmail,
+                        onSuccess = { screen = "login" },
+                        onBack    = { screen = "forgot_password" }
                     )
 
                 else -> {}

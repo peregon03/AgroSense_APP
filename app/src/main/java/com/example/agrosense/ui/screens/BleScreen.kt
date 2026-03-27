@@ -29,7 +29,7 @@ fun BleScreen(
     viewModel: BleViewModel,
     sensorViewModel: SensorViewModel,
     onBack: () -> Unit = {},
-    onSensorRegistered: () -> Unit = {}
+    onSensorRegistered: (sensorName: String, apiKey: String) -> Unit = { _, _ -> }
 ) {
     val devices     by viewModel.devices.collectAsState()
     val deviceId    by viewModel.deviceId.collectAsState()
@@ -238,7 +238,8 @@ fun BleScreen(
             title = { Text("Sensor ya vinculado") },
             text = { Text("\"$alreadyRegisteredName\" ya está registrado en tu cuenta.") },
             confirmButton = {
-                Button(onClick = { showAlreadyDialog = false; onSensorRegistered() }) {
+                // Sensor ya registrado → ir a lista sin pasar por WiFi config
+                Button(onClick = { showAlreadyDialog = false; onSensorRegistered("", "") }) {
                     Text("Ver mis sensores")
                 }
             },
@@ -291,14 +292,16 @@ fun BleScreen(
                         val id = deviceId ?: selectedDevice?.address ?: return@Button
                         isRegistering = true
                         registerError = null
+                        val resolvedName = sensorName.trim().ifBlank { "Mi sensor" }
                         sensorViewModel.registerSensor(
                             deviceId = id.lowercase(),
-                            name = sensorName.trim().ifBlank { "Mi sensor" },
+                            name = resolvedName,
                             location = sensorLocation.trim().ifBlank { null },
-                            onSuccess = {
+                            onSuccess = { apiKey ->
                                 isRegistering = false
                                 showRegisterDialog = false
-                                onSensorRegistered()
+                                // Navegar directo a WiFi config con la api_key recién generada
+                                onSensorRegistered(resolvedName, apiKey)
                             },
                             onError = { msg ->
                                 isRegistering = false

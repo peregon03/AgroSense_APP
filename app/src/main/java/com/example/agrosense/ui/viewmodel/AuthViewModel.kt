@@ -4,15 +4,12 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.agrosense.data.api.ApiClient
-import com.example.agrosense.data.model.ChangePasswordRequest
-import com.example.agrosense.data.model.LoginRequest
-import com.example.agrosense.data.model.RegisterRequest
-import com.example.agrosense.data.model.UpdateProfileRequest
-import com.example.agrosense.data.model.User
+import com.example.agrosense.data.model.*
 import com.example.agrosense.data.storage.SessionManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import retrofit2.HttpException
 
 data class AuthState(
@@ -29,13 +26,14 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(AuthState())
     val state: StateFlow<AuthState> = _state
 
-    private fun httpErrorMessage(e: HttpException): String {
-        return try {
-            e.response()?.errorBody()?.string() ?: "Error HTTP ${e.code()}"
-        } catch (_: Exception) {
-            "Error HTTP ${e.code()}"
-        }
-    }
+    private fun errorBody(e: HttpException): String =
+        try { e.response()?.errorBody()?.string() ?: "Error HTTP ${e.code()}" }
+        catch (_: Exception) { "Error HTTP ${e.code()}" }
+
+    private fun parseMessage(body: String): String =
+        try { JSONObject(body).optString("message", body) } catch (_: Exception) { body }
+
+    // ── Sesión ───────────────────────────────────────────────────────────────
 
     fun checkSession() {
         viewModelScope.launch {
@@ -46,29 +44,53 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun login(email: String, password: String) {
+    // ── Login ────────────────────────────────────────────────────────────────
+
+    fun login(
+        email: String,
+        password: String,
+        onNeedsVerification: ((email: String) -> Unit)? = null
+    ) {
         viewModelScope.launch {
             try {
                 _state.value = AuthState(isLoading = true)
                 val res = ApiClient.authApi.login(
-                    LoginRequest(email = email.trim(), password = password)
+                    LoginRequest(email = email.trim().lowercase(), password = password)
                 )
-                session.saveToken(res.token)
-                _state.value = AuthState(isLoggedIn = true, user = res.user)
-                loadMe()
+                when {
+                    res.isSuccessful -> {
+                        val body = res.body()!!
+                        session.saveToken(body.token)
+                        _state.value = AuthState(isLoggedIn = true, user = body.user)
+                        loadMe()
+                    }
+                    res.code() == 403 -> {
+                        // Correo no verificado
+                        val rawBody = res.errorBody()?.string() ?: ""
+                        val serverEmail = try { JSONObject(rawBody).optString("email", email.trim().lowercase()) }
+                                          catch (_: Exception) { email.trim().lowercase() }
+                        _state.value = AuthState(isLoading = false)
+                        onNeedsVerification?.invoke(serverEmail)
+                    }
+                    else -> {
+                        val msg = parseMessage(res.errorBody()?.string() ?: "")
+                        _state.value = AuthState(isLoading = false, error = msg)
+                    }
+                }
             } catch (e: Exception) {
-                val msg = if (e is HttpException) httpErrorMessage(e) else (e.message ?: "Error desconocido")
-                _state.value = AuthState(isLoading = false, error = msg, isLoggedIn = false)
+                _state.value = AuthState(isLoading = false, error = e.message ?: "Error desconocido")
             }
         }
     }
+
+    // ── Registro ─────────────────────────────────────────────────────────────
 
     fun register(
         nombre: String,
         apellido: String,
         email: String,
         password: String,
-        onSuccess: () -> Unit
+        onNeedsVerification: (email: String) -> Unit
     ) {
         viewModelScope.launch {
             try {
@@ -81,16 +103,110 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                         password   = password
                     )
                 )
-                session.saveToken(res.token)
-                _state.value = AuthState(isLoggedIn = true, user = res.user)
-                loadMe()
-                onSuccess()
+                if (res.isSuccessful) {
+                    val serverEmail = res.body()?.email ?: email.trim().lowercase()
+                    _state.value = AuthState(isLoading = false)
+                    onNeedsVerification(serverEmail)
+                } else {
+                    val msg = parseMessage(res.errorBody()?.string() ?: "")
+                    _state.value = AuthState(isLoading = false, error = msg)
+                }
             } catch (e: Exception) {
-                val msg = if (e is HttpException) httpErrorMessage(e) else (e.message ?: "Error desconocido")
-                _state.value = AuthState(isLoading = false, error = msg, isLoggedIn = false)
+                _state.value = AuthState(isLoading = false, error = e.message ?: "Error desconocido")
             }
         }
     }
+
+    // ── Verificar correo ─────────────────────────────────────────────────────
+
+    fun verifyEmail(
+        email: String,
+        code: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val res = ApiClient.authApi.verifyEmail(VerifyEmailRequest(email, code))
+                if (res.isSuccessful) {
+                    val body = res.body()!!
+                    session.saveToken(body.token)
+                    _state.value = AuthState(isLoggedIn = true, user = body.user)
+                    onSuccess()
+                } else {
+                    val msg = parseMessage(res.errorBody()?.string() ?: "")
+                    onError(msg)
+                }
+            } catch (e: Exception) {
+                onError(e.message ?: "Error de conexión")
+            }
+        }
+    }
+
+    // ── Recuperar contraseña ─────────────────────────────────────────────────
+
+    fun forgotPassword(
+        email: String,
+        onSuccess: (email: String) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val res = ApiClient.authApi.forgotPassword(ForgotPasswordRequest(email.trim().lowercase()))
+                if (res.isSuccessful) {
+                    onSuccess(res.body()?.email ?: email.trim().lowercase())
+                } else {
+                    val msg = parseMessage(res.errorBody()?.string() ?: "")
+                    onError(msg)
+                }
+            } catch (e: Exception) {
+                onError(e.message ?: "Error de conexión")
+            }
+        }
+    }
+
+    // ── Restablecer contraseña ───────────────────────────────────────────────
+
+    fun resetPassword(
+        email: String,
+        code: String,
+        newPassword: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val res = ApiClient.authApi.resetPassword(
+                    ResetPasswordRequest(email = email, code = code, new_password = newPassword)
+                )
+                if (res.isSuccessful) onSuccess()
+                else onError(parseMessage(res.errorBody()?.string() ?: ""))
+            } catch (e: Exception) {
+                onError(e.message ?: "Error de conexión")
+            }
+        }
+    }
+
+    // ── Reenviar código ──────────────────────────────────────────────────────
+
+    fun resendCode(
+        email: String,
+        type: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val res = ApiClient.authApi.resendCode(ResendCodeRequest(email, type))
+                if (res.isSuccessful) onSuccess()
+                else onError(parseMessage(res.errorBody()?.string() ?: ""))
+            } catch (e: Exception) {
+                onError(e.message ?: "Error de conexión")
+            }
+        }
+    }
+
+    // ── Perfil ───────────────────────────────────────────────────────────────
 
     fun loadMe() {
         viewModelScope.launch {
@@ -100,20 +216,9 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                 val res = ApiClient.userApi.me("Bearer $token")
                 _state.value = _state.value.copy(user = res.user, error = null)
             } catch (e: Exception) {
-                if (e is HttpException && (e.code() == 401 || e.code() == 403)) {
-                    logout()
-                } else {
-                    val msg = if (e is HttpException) httpErrorMessage(e) else (e.message ?: "Error cargando perfil")
-                    _state.value = _state.value.copy(error = msg)
-                }
+                if (e is HttpException && (e.code() == 401 || e.code() == 403)) logout()
+                else _state.value = _state.value.copy(error = e.message ?: "Error cargando perfil")
             }
-        }
-    }
-
-    fun logout() {
-        viewModelScope.launch {
-            session.clear()
-            _state.value = AuthState(isLoggedIn = false, user = null)
         }
     }
 
@@ -141,8 +246,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     onSuccess()
                 } else {
-                    val msg = res.errorBody()?.string() ?: "Error al actualizar"
-                    onError(msg)
+                    onError(parseMessage(res.errorBody()?.string() ?: ""))
                 }
             } catch (e: Exception) {
                 onError(e.message ?: "Error desconocido")
@@ -161,23 +265,23 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                 val token = session.getToken() ?: return@launch onError("No autenticado")
                 val res = ApiClient.userApi.changePassword(
                     "Bearer $token",
-                    ChangePasswordRequest(
-                        current_password = currentPassword,
-                        new_password     = newPassword
-                    )
+                    ChangePasswordRequest(current_password = currentPassword, new_password = newPassword)
                 )
                 if (res.isSuccessful) onSuccess()
-                else {
-                    val msg = res.errorBody()?.string() ?: "Error al cambiar contraseña"
-                    onError(msg)
-                }
+                else onError(parseMessage(res.errorBody()?.string() ?: ""))
             } catch (e: Exception) {
                 onError(e.message ?: "Error desconocido")
             }
         }
     }
 
-    // Limpia el error cuando el usuario empieza a escribir
+    fun logout() {
+        viewModelScope.launch {
+            session.clear()
+            _state.value = AuthState(isLoggedIn = false, user = null)
+        }
+    }
+
     fun clearError() {
         _state.value = _state.value.copy(error = null)
     }

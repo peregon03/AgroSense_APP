@@ -28,7 +28,9 @@ import com.example.agrosense.ui.viewmodel.AuthViewModel
 @Composable
 fun LoginScreen(
     vm: AuthViewModel,
-    onGoRegister: () -> Unit
+    onGoRegister: () -> Unit,
+    onForgotPassword: () -> Unit = {},
+    onNeedsVerification: (email: String) -> Unit = {}
 ) {
     var email          by remember { mutableStateOf("") }
     var pass           by remember { mutableStateOf("") }
@@ -108,7 +110,7 @@ fun LoginScreen(
             keyboardActions = KeyboardActions(
                 onDone = {
                     focusManager.clearFocus()
-                    vm.login(email, pass)
+                    vm.login(email, pass, onNeedsVerification = onNeedsVerification)
                 }
             ),
             isError = state.error != null,
@@ -150,7 +152,7 @@ fun LoginScreen(
         Button(
             onClick = {
                 focusManager.clearFocus()
-                vm.login(email, pass)
+                vm.login(email, pass, onNeedsVerification = onNeedsVerification)
             },
             modifier = Modifier.fillMaxWidth().height(50.dp),
             enabled = !state.isLoading && email.isNotBlank() && pass.isNotBlank(),
@@ -168,7 +170,16 @@ fun LoginScreen(
                 fontWeight = FontWeight.SemiBold)
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(8.dp))
+
+        TextButton(
+            onClick  = onForgotPassword,
+            modifier = Modifier.align(Alignment.End)
+        ) {
+            Text("¿Olvidaste tu contraseña?", style = MaterialTheme.typography.bodySmall)
+        }
+
+        Spacer(Modifier.height(8.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
