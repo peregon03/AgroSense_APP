@@ -45,7 +45,8 @@ class MainActivity : ComponentActivity() {
                         vm               = authVm,
                         onRegisterSensor = { screen = "ble" },
                         onViewSensors    = { screen = "sensors_list" },
-                        onViewCharts     = { screen = "sensors_list" }
+                        onViewCharts     = { screen = "sensors_list" },
+                        onEditProfile    = { screen = "edit_profile" }
                     )
 
                 "ble" ->
@@ -98,6 +99,12 @@ class MainActivity : ComponentActivity() {
                         LaunchedEffect(Unit) { screen = "sensors_list" }
                     }
                 }
+
+                "edit_profile" ->
+                    EditProfileScreen(
+                        vm     = authVm,
+                        onBack = { screen = "profile" }
+                    )
 
                 else -> {}
             }

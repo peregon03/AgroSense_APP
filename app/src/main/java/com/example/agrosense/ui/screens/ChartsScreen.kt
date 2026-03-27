@@ -254,14 +254,15 @@ fun ChartCard(
             AndroidView(
                 factory = { context ->
                     LineChart(context).apply {
-                        description.isEnabled  = false
-                        legend.isEnabled       = false
+                        description.isEnabled = false
+                        legend.isEnabled      = false
                         setTouchEnabled(true)
-                        isDragEnabled          = true
+                        isDragEnabled         = true
                         setScaleEnabled(true)
                         setPinchZoom(true)
                         setDrawGridBackground(false)
-                        axisRight.isEnabled    = false
+                        setExtraBottomOffset(12f)   // espacio para etiquetas rotadas
+                        axisRight.isEnabled   = false
                         axisLeft.apply {
                             setDrawGridLines(true)
                             gridColor = android.graphics.Color.LTGRAY
@@ -270,56 +271,85 @@ fun ChartCard(
                         xAxis.apply {
                             position = XAxis.XAxisPosition.BOTTOM
                             setDrawGridLines(false)
+                            setAvoidFirstLastClipping(true)
                             textSize = 9f
                         }
                     }
                 },
                 update = { chart ->
-                    // Actualizar formato del eje X según el rango actual
+                    // Los timestamps en ms tienen 13 dígitos y Float solo soporta ~7.
+                    // Usamos SEGUNDOS (dividir entre 1000) para mantener precisión.
+                    val nowSec = System.currentTimeMillis() / 1000f
+                    val rangeSeconds = when (range) {
+                        DateRange.TODAY   -> 24 * 3600f
+                        DateRange.WEEK    -> 7  * 24 * 3600f
+                        DateRange.MONTH   -> 30 * 24 * 3600f
+                        DateRange.QUARTER -> 90 * 24 * 3600f
+                    }
+                    val rangeStartSec = nowSec - rangeSeconds
+
+                    val fmt = when (range) {
+                        DateRange.TODAY   -> SimpleDateFormat("HH:mm",  Locale.getDefault())
+                        DateRange.WEEK    -> SimpleDateFormat("EEE dd", Locale.getDefault())
+                        DateRange.MONTH   -> SimpleDateFormat("dd/MM",  Locale.getDefault())
+                        DateRange.QUARTER -> SimpleDateFormat("dd/MM",  Locale.getDefault())
+                    }.apply { timeZone = TZ_CO }
+
+                    val granSec = when (range) {
+                        DateRange.TODAY   -> 3600f          // 1 hora
+                        DateRange.WEEK    -> 86400f         // 1 día
+                        DateRange.MONTH   -> 3 * 86400f     // 3 días
+                        DateRange.QUARTER -> 7 * 86400f     // 1 semana
+                    }
+
                     chart.xAxis.apply {
-                        labelCount = when (range) {
+                        axisMinimum          = rangeStartSec
+                        axisMaximum          = nowSec
+                        isGranularityEnabled = true
+                        granularity          = granSec
+                        labelCount           = when (range) {
                             DateRange.TODAY   -> 6
                             DateRange.WEEK    -> 7
-                            DateRange.MONTH   -> 8
+                            DateRange.MONTH   -> 6
                             DateRange.QUARTER -> 6
                         }
-                        val fmt = when (range) {
-                            DateRange.TODAY   -> SimpleDateFormat("HH:mm",     Locale.getDefault())
-                            DateRange.WEEK    -> SimpleDateFormat("EEE HH:mm", Locale.getDefault())
-                            DateRange.MONTH   -> SimpleDateFormat("dd/MM",     Locale.getDefault())
-                            DateRange.QUARTER -> SimpleDateFormat("dd/MM",     Locale.getDefault())
-                        }.apply { timeZone = TZ_CO }
+                        labelRotationAngle   = when (range) {
+                            DateRange.TODAY -> 0f
+                            else            -> -45f
+                        }
                         valueFormatter = object : ValueFormatter() {
                             override fun getFormattedValue(value: Float): String =
-                                try { fmt.format(Date(value.toLong())) } catch (e: Exception) { "" }
+                                try { fmt.format(Date(value.toLong() * 1000L)) } catch (_: Exception) { "" }
                         }
                     }
 
-                    val entries = readings.mapIndexedNotNull { idx, reading ->
-                        val ts = parseTimestamp(reading.created_at)
-                        if (ts != null) Entry(ts.toFloat(), valueExtractor(reading))
-                        else Entry(idx.toFloat(), valueExtractor(reading))
+                    val entries = readings.mapNotNull { reading ->
+                        val tsMs = parseTimestamp(reading.created_at) ?: return@mapNotNull null
+                        Entry(tsMs / 1000f, valueExtractor(reading))  // segundos = precisión float OK
                     }
 
                     val dataSet = LineDataSet(entries, title).apply {
-                        color              = lineColor.toArgb()
+                        color             = lineColor.toArgb()
                         setCircleColor(lineColor.toArgb())
-                        circleRadius       = if (entries.size > 100) 0f else 3f
+                        circleRadius      = if (entries.size > 60) 0f else 3f
                         setDrawCircleHole(false)
-                        lineWidth          = 2f
+                        lineWidth         = 2f
                         setDrawValues(false)
-                        mode               = LineDataSet.Mode.CUBIC_BEZIER
+                        mode              = LineDataSet.Mode.CUBIC_BEZIER
                         setDrawFilled(true)
-                        fillColor          = lineColor.copy(alpha = 0.15f).toArgb()
-                        fillAlpha          = 40
+                        fillColor         = lineColor.copy(alpha = 0.15f).toArgb()
+                        fillAlpha         = 40
                     }
-                    chart.data = LineData(dataSet)
-                    chart.animateX(500)
+
+                    chart.data = if (entries.isEmpty()) null else LineData(dataSet)
+                    // Evita que al hacer zoom los puntos desaparezcan
+                    chart.setVisibleXRangeMinimum(granSec)
+                    chart.animateX(400)
                     chart.invalidate()
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(200.dp)
+                    .height(220.dp)
             )
         }
     }

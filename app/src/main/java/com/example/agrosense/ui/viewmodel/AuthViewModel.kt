@@ -4,8 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.agrosense.data.api.ApiClient
+import com.example.agrosense.data.model.ChangePasswordRequest
 import com.example.agrosense.data.model.LoginRequest
 import com.example.agrosense.data.model.RegisterRequest
+import com.example.agrosense.data.model.UpdateProfileRequest
 import com.example.agrosense.data.model.User
 import com.example.agrosense.data.storage.SessionManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -112,6 +114,66 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             session.clear()
             _state.value = AuthState(isLoggedIn = false, user = null)
+        }
+    }
+
+    fun updateProfile(
+        firstName: String,
+        lastName: String,
+        email: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val token = session.getToken() ?: return@launch onError("No autenticado")
+                val res = ApiClient.userApi.updateProfile(
+                    "Bearer $token",
+                    UpdateProfileRequest(
+                        first_name = firstName.trim(),
+                        last_name  = lastName.trim(),
+                        email      = email.trim().lowercase()
+                    )
+                )
+                if (res.isSuccessful) {
+                    res.body()?.user?.let { user ->
+                        _state.value = _state.value.copy(user = user, error = null)
+                    }
+                    onSuccess()
+                } else {
+                    val msg = res.errorBody()?.string() ?: "Error al actualizar"
+                    onError(msg)
+                }
+            } catch (e: Exception) {
+                onError(e.message ?: "Error desconocido")
+            }
+        }
+    }
+
+    fun changePassword(
+        currentPassword: String,
+        newPassword: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val token = session.getToken() ?: return@launch onError("No autenticado")
+                val res = ApiClient.userApi.changePassword(
+                    "Bearer $token",
+                    ChangePasswordRequest(
+                        current_password = currentPassword,
+                        new_password     = newPassword
+                    )
+                )
+                if (res.isSuccessful) onSuccess()
+                else {
+                    val msg = res.errorBody()?.string() ?: "Error al cambiar contraseña"
+                    onError(msg)
+                }
+            } catch (e: Exception) {
+                onError(e.message ?: "Error desconocido")
+            }
         }
     }
 
