@@ -136,7 +136,13 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
                     loadSensors() // Refrescar lista con nuevos umbrales
                     onSuccess()
                 } else {
-                    onError("Error al guardar: ${response.code()}")
+                    val errBody = response.errorBody()?.string()
+                    val msg = try {
+                        org.json.JSONObject(errBody ?: "").getString("message")
+                    } catch (_: Exception) {
+                        "Error al guardar (${response.code()})"
+                    }
+                    onError(msg)
                 }
             } catch (e: Exception) {
                 onError("Error de conexión: ${e.message}")

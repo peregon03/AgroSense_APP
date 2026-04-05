@@ -1,58 +1,84 @@
 package com.example.agrosense.ui.theme
 
-import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
-
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
+import androidx.compose.ui.graphics.Color
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
+    primary              = Green800,
+    onPrimary            = Color.White,
+    primaryContainer     = Green200,
+    onPrimaryContainer   = Green900,
 
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    secondary            = Green700,
+    onSecondary          = Color.White,
+    secondaryContainer   = Green100,
+    onSecondaryContainer = Green900,
+
+    tertiary             = Teal400,
+    onTertiary           = Color.White,
+    tertiaryContainer    = Teal200,
+    onTertiaryContainer  = Color(0xFF00251A),
+
+    background           = Green50,
+    onBackground         = Color(0xFF1A1C19),
+
+    surface              = SurfaceLight,
+    onSurface            = Color(0xFF1A1C19),
+    surfaceVariant       = Green100,
+    onSurfaceVariant     = Color(0xFF414941),
+
+    error                = Red700,
+    onError              = Color.White,
+    errorContainer       = Red100,
+    onErrorContainer     = Color(0xFF410002),
+
+    outline              = Color(0xFF717971),
+)
+
+private val DarkColorScheme = darkColorScheme(
+    primary              = Green200,
+    onPrimary            = Green900,
+    primaryContainer     = Green800,
+    onPrimaryContainer   = Green100,
+
+    secondary            = Green200,
+    onSecondary          = Green700,
+    secondaryContainer   = Green800,
+    onSecondaryContainer = Green100,
+
+    tertiary             = Teal200,
+    onTertiary           = Color(0xFF00251A),
+    tertiaryContainer    = Color(0xFF00504A),
+    onTertiaryContainer  = Teal200,
+
+    background           = BackgroundDark,
+    onBackground         = Color(0xFFE2E3DC),
+
+    surface              = SurfaceDark,
+    onSurface            = Color(0xFFE2E3DC),
+    surfaceVariant       = Color(0xFF414941),
+    onSurfaceVariant     = Color(0xFFC1C9BF),
+
+    error                = Color(0xFFFFB4AB),
+    onError              = Color(0xFF690005),
+    errorContainer       = Color(0xFF93000A),
+    onErrorContainer     = Color(0xFFFFDAD6),
+
+    outline              = Color(0xFF8B9389),
 )
 
 @Composable
 fun AgroSenseTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
-
     MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
+        colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme,
+        typography  = Typography,
+        content     = content
     )
 }

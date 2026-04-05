@@ -12,9 +12,10 @@ import kotlinx.coroutines.flow.StateFlow
 import java.util.*
 
 data class SensorReading(
-    val soilHumidity: Float? = null,
     val temperature: Float? = null,
     val airHumidity: Float? = null,
+    val co2: Float? = null,
+    val methane: Float? = null,
     val rawJson: String? = null
 )
 
@@ -484,10 +485,11 @@ class BleManager(private val context: Context) {
                 return regex.find(json)?.groupValues?.get(1)?.toFloatOrNull()
             }
             SensorReading(
-                soilHumidity = extractFloat("soil_humidity"),
-                temperature  = extractFloat("temperature"),
-                airHumidity  = extractFloat("air_humidity"),
-                rawJson      = json
+                temperature = extractFloat("temperature"),
+                airHumidity = extractFloat("air_humidity"),
+                co2         = extractFloat("co2"),
+                methane     = extractFloat("methane"),
+                rawJson     = json
             )
         } catch (e: Exception) {
             SensorReading(rawJson = json)

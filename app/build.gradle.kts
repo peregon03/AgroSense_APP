@@ -71,6 +71,9 @@ dependencies {
     // ── Gráficas MPAndroidChart ────────────────────────────────────────────
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
 
+    // WorkManager — notificaciones en background
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
     // Tests
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

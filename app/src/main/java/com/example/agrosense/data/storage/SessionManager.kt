@@ -2,6 +2,7 @@ package com.example.agrosense.data.storage
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
@@ -11,7 +12,8 @@ private val Context.dataStore by preferencesDataStore("session")
 
 class SessionManager(private val context: Context) {
 
-    private val KEY_TOKEN = stringPreferencesKey("token")
+    private val KEY_TOKEN  = stringPreferencesKey("token")
+    private val KEY_UNREAD = intPreferencesKey("unread_count")
 
     suspend fun saveToken(token: String) {
         context.dataStore.edit { prefs ->
@@ -25,9 +27,18 @@ class SessionManager(private val context: Context) {
             .first()
     }
 
+    suspend fun saveUnreadCount(count: Int) {
+        context.dataStore.edit { prefs -> prefs[KEY_UNREAD] = count }
+    }
+
+    suspend fun getUnreadCount(): Int {
+        return context.dataStore.data.map { it[KEY_UNREAD] ?: 0 }.first()
+    }
+
     suspend fun clear() {
         context.dataStore.edit { prefs ->
             prefs.remove(KEY_TOKEN)
+            prefs.remove(KEY_UNREAD)
         }
     }
 }

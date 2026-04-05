@@ -5,6 +5,7 @@ data class SensorReading(
     val sensor_id: Int,
     val temperature: Float?,
     val air_humidity: Float?,
-    val soil_humidity: Float?,
+    val co2: Float?,
+    val methane: Float?,
     val created_at: String
 )

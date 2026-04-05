@@ -29,9 +29,10 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 // Colores de líneas de gráficas (semánticos por tipo de dato)
-private val ColorTemp  = Color(0xFFE53935)  // rojo — temperatura
-private val ColorAire  = Color(0xFF1565C0)  // azul — humedad aire
-private val ColorSuelo = Color(0xFF4CAF50)  // verde — humedad suelo
+private val ColorTemp    = Color(0xFFE53935)  // rojo   — temperatura
+private val ColorAire    = Color(0xFF1565C0)  // azul   — humedad aire
+private val ColorCO2     = Color(0xFF6A1B9A)  // morado — CO2
+private val ColorMethane = Color(0xFFF57F17)  // naranja — metano
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -128,10 +129,17 @@ fun ChartsScreen(
                         range          = uiState.selectedRange
                     )
                     ChartCard(
-                        title          = "🌱 Humedad Suelo (%)",
+                        title          = "🌫 CO₂ (ppm)",
                         readings       = uiState.readings,
-                        valueExtractor = { it.soil_humidity ?: 0f },
-                        lineColor      = ColorSuelo,
+                        valueExtractor = { it.co2 ?: 0f },
+                        lineColor      = ColorCO2,
+                        range          = uiState.selectedRange
+                    )
+                    ChartCard(
+                        title          = "🔥 Metano (ppm)",
+                        readings       = uiState.readings,
+                        valueExtractor = { it.methane ?: 0f },
+                        lineColor      = ColorMethane,
                         range          = uiState.selectedRange
                     )
                 }
@@ -189,17 +197,25 @@ fun DateRangeSelector(
 
 @Composable
 fun SummaryCards(readings: List<SensorReading>) {
-    val temps = readings.mapNotNull { it.temperature }
-    val airH  = readings.mapNotNull { it.air_humidity }
-    val soilH = readings.mapNotNull { it.soil_humidity }
+    val temps   = readings.mapNotNull { it.temperature }
+    val airH    = readings.mapNotNull { it.air_humidity }
+    val co2     = readings.mapNotNull { it.co2 }
+    val methane = readings.mapNotNull { it.methane }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        SummaryCard("🌡 Temp",  temps, "°C", Color(0xFFFFEBEE), ColorTemp,  Modifier.weight(1f))
-        SummaryCard("💧 Aire",  airH,  "%",  Color(0xFFE3F2FD), ColorAire,  Modifier.weight(1f))
-        SummaryCard("🌱 Suelo", soilH, "%",  Color(0xFFE8F5E9), ColorSuelo, Modifier.weight(1f))
+        SummaryCard("🌡 Temp",   temps,   "°C",  Color(0xFFFFEBEE), ColorTemp,    Modifier.weight(1f))
+        SummaryCard("💧 Aire",   airH,    "%",   Color(0xFFE3F2FD), ColorAire,    Modifier.weight(1f))
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        SummaryCard("🌫 CO₂",    co2,     "ppm", Color(0xFFF3E5F5), ColorCO2,     Modifier.weight(1f))
+        SummaryCard("🔥 Metano", methane, "ppm", Color(0xFFFFF8E1), ColorMethane, Modifier.weight(1f))
     }
 }
 

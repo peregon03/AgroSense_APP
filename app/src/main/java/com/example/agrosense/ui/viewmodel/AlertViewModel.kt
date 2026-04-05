@@ -36,10 +36,17 @@ class AlertViewModel(app: Application) : AndroidViewModel(app) {
                     _state.value = _state.value.copy(
                         alerts = body?.alerts ?: emptyList(),
                         unreadCount = body?.unread_count ?: 0,
-                        isLoading = false
+                        isLoading = false,
+                        error = null
                     )
                 } else {
-                    _state.value = _state.value.copy(isLoading = false, error = "Error cargando alertas")
+                    val errBody = response.errorBody()?.string()
+                    val msg = try {
+                        org.json.JSONObject(errBody ?: "").getString("message")
+                    } catch (_: Exception) {
+                        "Error al cargar alertas (${response.code()})"
+                    }
+                    _state.value = _state.value.copy(isLoading = false, error = msg)
                 }
             } catch (e: Exception) {
                 _state.value = _state.value.copy(isLoading = false, error = "Error de conexión")

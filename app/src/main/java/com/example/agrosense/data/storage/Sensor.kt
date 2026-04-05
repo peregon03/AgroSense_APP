@@ -10,6 +10,8 @@ data class Sensor(
     val temp_max: Float? = null,
     val air_hum_min: Float? = null,
     val air_hum_max: Float? = null,
-    val soil_hum_min: Float? = null,
-    val soil_hum_max: Float? = null
+    val co2_min: Float? = null,
+    val co2_max: Float? = null,
+    val methane_min: Float? = null,
+    val methane_max: Float? = null
 )

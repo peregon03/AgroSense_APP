@@ -1,5 +1,6 @@
 package com.example.agrosense.data.api
 
+import com.google.gson.GsonBuilder
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -41,11 +42,13 @@ object ApiClient {
             .build()
     }
 
+    private val gsonWithNulls = GsonBuilder().serializeNulls().create()
+
     private val retrofitApi: Retrofit by lazy {
         Retrofit.Builder()
             .baseUrl(API_BASE_URL)
             .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
+            .addConverterFactory(GsonConverterFactory.create(gsonWithNulls))
             .build()
     }
 

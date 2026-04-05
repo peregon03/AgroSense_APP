@@ -368,11 +368,21 @@ private fun SensorCard(
                         )
                     }
                     Spacer(Modifier.height(8.dp))
-                    ReadingChip(
-                        label  = "🌱 Hum. suelo",
-                        value  = reading.soilHumidity?.let { "%.1f %%".format(it) } ?: "--",
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ReadingChip(
+                            label  = "🌫 CO₂",
+                            value  = reading.co2?.let { "%.0f ppm".format(it) } ?: "--",
+                            modifier = Modifier.weight(1f)
+                        )
+                        ReadingChip(
+                            label  = "🔥 Metano",
+                            value  = reading.methane?.let { "%.0f ppm".format(it) } ?: "--",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(

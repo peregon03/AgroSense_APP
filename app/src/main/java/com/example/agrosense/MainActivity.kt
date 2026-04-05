@@ -1,5 +1,7 @@
 package com.example.agrosense
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -7,27 +9,35 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.ui.screens.*
-import com.example.agrosense.ui.viewmodel.AlertViewModel
 import com.example.agrosense.ui.viewmodel.AuthViewModel
 import com.example.agrosense.ui.viewmodel.BleViewModel
 import com.example.agrosense.ui.viewmodel.SensorViewModel
+import com.example.agrosense.ui.theme.AgroSenseTheme
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.rememberPermissionState
 
+@OptIn(ExperimentalPermissionsApi::class)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContent {
+            AgroSenseTheme {
+
+            // Solicitar permiso de notificaciones en Android 13+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val notifPermission = rememberPermissionState(Manifest.permission.POST_NOTIFICATIONS)
+                LaunchedEffect(Unit) { notifPermission.launchPermissionRequest() }
+            }
             val authVm: AuthViewModel     = viewModel()
             val sensorVm: SensorViewModel = viewModel()
             val bleVm: BleViewModel       = viewModel()
-            val alertVm: AlertViewModel   = viewModel()
 
             var screen by remember { mutableStateOf("loading") }
 
             // Sensores seleccionados para WiFi y para gráficas
             var wifiTargetSensor    by remember { mutableStateOf<Sensor?>(null) }
             var chartsTargetSensor  by remember { mutableStateOf<Sensor?>(null) }
-            var alertTargetSensor   by remember { mutableStateOf<Sensor?>(null) }
             // WiFi config cuando viene directo desde BLE (sin objeto Sensor completo)
             var pendingWifiName     by remember { mutableStateOf("") }
             var pendingWifiApiKey   by remember { mutableStateOf("") }
@@ -35,12 +45,10 @@ class MainActivity : ComponentActivity() {
             var pendingEmail        by remember { mutableStateOf("") }
 
             val state by authVm.state.collectAsState()
-            val alertState by alertVm.state.collectAsState()
 
             LaunchedEffect(Unit) { authVm.checkSession() }
             LaunchedEffect(state.isLoggedIn) {
                 screen = if (state.isLoggedIn) "profile" else "login"
-                if (state.isLoggedIn) alertVm.loadAlerts()
             }
 
             when (screen) {
@@ -65,9 +73,7 @@ class MainActivity : ComponentActivity() {
                         onRegisterSensor = { screen = "ble" },
                         onViewSensors    = { screen = "sensors_list" },
                         onViewCharts     = { screen = "sensors_list" },
-                        onEditProfile    = { screen = "edit_profile" },
-                        onViewAlerts     = { screen = "alerts" },
-                        alertUnreadCount = alertState.unreadCount
+                        onEditProfile    = { screen = "edit_profile" }
                     )
 
                 "ble" ->
@@ -96,10 +102,7 @@ class MainActivity : ComponentActivity() {
                             wifiTargetSensor = sensor
                             screen = "wifi_config"
                         },
-                        onConfigureAlerts = { sensor ->
-                            alertTargetSensor = sensor
-                            screen = "alert_config"
-                        },
+                        onConfigureAlerts = { },
                         onViewCharts = { sensor ->
                             chartsTargetSensor = sensor
                             screen = "charts"
@@ -125,25 +128,6 @@ class MainActivity : ComponentActivity() {
                         LaunchedEffect(Unit) { screen = "sensors_list" }
                     }
                 }
-
-                "alert_config" -> {
-                    val sensor = alertTargetSensor
-                    if (sensor != null) {
-                        AlertConfigScreen(
-                            sensor          = sensor,
-                            sensorViewModel = sensorVm,
-                            onBack          = { screen = "sensors_list" }
-                        )
-                    } else {
-                        LaunchedEffect(Unit) { screen = "sensors_list" }
-                    }
-                }
-
-                "alerts" ->
-                    AlertsScreen(
-                        vm     = alertVm,
-                        onBack = { screen = "profile" }
-                    )
 
                 "charts" -> {
                     val sensor = chartsTargetSensor
@@ -190,6 +174,7 @@ class MainActivity : ComponentActivity() {
 
                 else -> {}
             }
+            } // AgroSenseTheme
         }
     }
 }
