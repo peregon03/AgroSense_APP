@@ -13,5 +13,6 @@ data class Sensor(
     val co2_min: Float? = null,
     val co2_max: Float? = null,
     val methane_min: Float? = null,
-    val methane_max: Float? = null
+    val methane_max: Float? = null,
+    val pump_manual_override: Boolean? = null
 )

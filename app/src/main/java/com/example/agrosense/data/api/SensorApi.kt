@@ -1,5 +1,9 @@
 package com.example.agrosense.data.api
 
+import com.example.agrosense.data.model.PumpOverrideRequest
+import com.example.agrosense.data.model.PumpOverrideResponse
+import com.example.agrosense.data.model.PumpSchedule
+import com.example.agrosense.data.model.PumpScheduleResponse
 import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.data.model.SensorReading
 import com.example.agrosense.data.model.ThresholdsRequest
@@ -65,6 +69,26 @@ interface SensorApiService {
         @Path("id") sensorId: Int,
         @Body body: ThresholdsRequest
     ): Response<ThresholdsResponse>
+
+    @GET("sensors/{id}/pump-schedule")
+    suspend fun getPumpSchedule(
+        @Header("Authorization") token: String,
+        @Path("id") sensorId: Int
+    ): Response<PumpScheduleResponse>
+
+    @PUT("sensors/{id}/pump-override")
+    suspend fun setPumpOverride(
+        @Header("Authorization") token: String,
+        @Path("id") sensorId: Int,
+        @Body body: PumpOverrideRequest
+    ): Response<PumpOverrideResponse>
+
+    @PUT("sensors/{id}/pump-schedule")
+    suspend fun updatePumpSchedule(
+        @Header("Authorization") token: String,
+        @Path("id") sensorId: Int,
+        @Body body: PumpSchedule
+    ): Response<PumpScheduleResponse>
 
     // range: "today" | "week" | "month" | "quarter"
     @GET("sensors/{id}/readings")

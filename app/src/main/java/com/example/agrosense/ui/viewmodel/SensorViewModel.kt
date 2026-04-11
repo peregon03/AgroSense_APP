@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.agrosense.data.api.ApiClient
 import com.example.agrosense.data.api.RegisterSensorRequest
+import com.example.agrosense.data.model.PumpOverrideRequest
+import com.example.agrosense.data.model.PumpSchedule
 import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.data.model.SensorReading
 import com.example.agrosense.data.model.ThresholdsRequest
@@ -33,6 +35,12 @@ data class SensorUiState(
     val readingsCount: Int = 0
 )
 
+data class PumpScheduleUiState(
+    val schedule: PumpSchedule? = null,
+    val isLoading: Boolean = false,
+    val error: String? = null
+)
+
 class SensorViewModel(app: Application) : AndroidViewModel(app) {
 
     private val session = SessionManager(app.applicationContext)
@@ -40,6 +48,9 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _state = MutableStateFlow(SensorUiState())
     val state: StateFlow<SensorUiState> = _state
+
+    private val _pumpScheduleState = MutableStateFlow(PumpScheduleUiState())
+    val pumpScheduleState: StateFlow<PumpScheduleUiState> = _pumpScheduleState
 
     // ── Cargar lista de sensores ───────────────────────────────────────────
 
@@ -190,7 +201,99 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ── Control manual remoto de bomba ────────────────────────────────────────
+
+    fun setPumpOverride(
+        sensorId: Int,
+        override: Boolean?,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val token = session.getToken()
+                    ?: run { onError("No hay sesión activa"); return@launch }
+                val response = api.setPumpOverride("Bearer $token", sensorId, PumpOverrideRequest(override))
+                if (response.isSuccessful) {
+                    _state.value = _state.value.copy(
+                        sensors = _state.value.sensors.map { s ->
+                            if (s.id == sensorId) s.copy(pump_manual_override = override) else s
+                        }
+                    )
+                    onSuccess()
+                } else {
+                    val errBody = response.errorBody()?.string()
+                    val msg = try {
+                        org.json.JSONObject(errBody ?: "").getString("message")
+                    } catch (_: Exception) { "Error (${response.code()})" }
+                    onError(msg)
+                }
+            } catch (e: Exception) {
+                onError("Error de conexión: ${e.message}")
+            }
+        }
+    }
+
     fun clearError() {
         _state.value = _state.value.copy(error = null)
+    }
+
+    // ── Programación de bomba ──────────────────────────────────────────────
+
+    fun loadPumpSchedule(sensorId: Int) {
+        viewModelScope.launch {
+            _pumpScheduleState.value = _pumpScheduleState.value.copy(isLoading = true, error = null)
+            try {
+                val token = session.getToken() ?: return@launch
+                val response = api.getPumpSchedule("Bearer $token", sensorId)
+                if (response.isSuccessful) {
+                    _pumpScheduleState.value = PumpScheduleUiState(
+                        schedule = response.body()?.schedule,
+                        isLoading = false
+                    )
+                } else {
+                    _pumpScheduleState.value = PumpScheduleUiState(
+                        isLoading = false,
+                        error = "Error al cargar programación (${response.code()})"
+                    )
+                }
+            } catch (e: Exception) {
+                _pumpScheduleState.value = PumpScheduleUiState(
+                    isLoading = false,
+                    error = "Error de conexión"
+                )
+            }
+        }
+    }
+
+    fun savePumpSchedule(
+        sensorId: Int,
+        schedule: PumpSchedule,
+        onResult: (success: Boolean) -> Unit
+    ) {
+        viewModelScope.launch {
+            _pumpScheduleState.value = _pumpScheduleState.value.copy(isLoading = true, error = null)
+            try {
+                val token = session.getToken() ?: return@launch
+                val response = api.updatePumpSchedule("Bearer $token", sensorId, schedule)
+                if (response.isSuccessful) {
+                    _pumpScheduleState.value = PumpScheduleUiState(
+                        schedule = response.body()?.schedule,
+                        isLoading = false
+                    )
+                    onResult(true)
+                } else {
+                    val errBody = response.errorBody()?.string()
+                    val msg = try {
+                        org.json.JSONObject(errBody ?: "").getString("message")
+                    } catch (_: Exception) { "Error al guardar (${response.code()})" }
+                    _pumpScheduleState.value = PumpScheduleUiState(isLoading = false, error = msg)
+                    onResult(false)
+                }
+            } catch (e: Exception) {
+                _pumpScheduleState.value = PumpScheduleUiState(isLoading = false, error = "Error de conexión")
+                onResult(false)
+            }
+        }
     }
 }

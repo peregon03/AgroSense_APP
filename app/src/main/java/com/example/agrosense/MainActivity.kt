@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
             // Sensores seleccionados para WiFi y para gráficas
             var wifiTargetSensor    by remember { mutableStateOf<Sensor?>(null) }
             var chartsTargetSensor  by remember { mutableStateOf<Sensor?>(null) }
+            var pumpTargetSensor    by remember { mutableStateOf<Sensor?>(null) }
             // WiFi config cuando viene directo desde BLE (sin objeto Sensor completo)
             var pendingWifiName     by remember { mutableStateOf("") }
             var pendingWifiApiKey   by remember { mutableStateOf("") }
@@ -72,7 +73,6 @@ class MainActivity : ComponentActivity() {
                         vm               = authVm,
                         onRegisterSensor = { screen = "ble" },
                         onViewSensors    = { screen = "sensors_list" },
-                        onViewCharts     = { screen = "sensors_list" },
                         onEditProfile    = { screen = "edit_profile" }
                     )
 
@@ -102,7 +102,10 @@ class MainActivity : ComponentActivity() {
                             wifiTargetSensor = sensor
                             screen = "wifi_config"
                         },
-                        onConfigureAlerts = { },
+                        onSchedulePump = { sensor ->
+                            pumpTargetSensor = sensor
+                            screen = "pump_schedule"
+                        },
                         onViewCharts = { sensor ->
                             chartsTargetSensor = sensor
                             screen = "charts"
@@ -123,6 +126,19 @@ class MainActivity : ComponentActivity() {
                                 pendingWifiApiKey = ""
                                 screen = "sensors_list"
                             }
+                        )
+                    } else {
+                        LaunchedEffect(Unit) { screen = "sensors_list" }
+                    }
+                }
+
+                "pump_schedule" -> {
+                    val sensor = pumpTargetSensor
+                    if (sensor != null) {
+                        PumpScheduleScreen(
+                            sensor          = sensor,
+                            sensorViewModel = sensorVm,
+                            onBack          = { screen = "sensors_list" }
                         )
                     } else {
                         LaunchedEffect(Unit) { screen = "sensors_list" }

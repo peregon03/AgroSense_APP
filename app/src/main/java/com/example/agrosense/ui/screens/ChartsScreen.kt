@@ -119,28 +119,32 @@ fun ChartsScreen(
                         readings       = uiState.readings,
                         valueExtractor = { it.temperature ?: 0f },
                         lineColor      = ColorTemp,
-                        range          = uiState.selectedRange
+                        range          = uiState.selectedRange,
+                        unit           = "°C"
                     )
                     ChartCard(
                         title          = "💧 Humedad Aire (%)",
                         readings       = uiState.readings,
                         valueExtractor = { it.air_humidity ?: 0f },
                         lineColor      = ColorAire,
-                        range          = uiState.selectedRange
+                        range          = uiState.selectedRange,
+                        unit           = "%"
                     )
                     ChartCard(
                         title          = "🌫 CO₂ (ppm)",
                         readings       = uiState.readings,
                         valueExtractor = { it.co2 ?: 0f },
                         lineColor      = ColorCO2,
-                        range          = uiState.selectedRange
+                        range          = uiState.selectedRange,
+                        unit           = "ppm"
                     )
                     ChartCard(
                         title          = "🔥 Metano (ppm)",
                         readings       = uiState.readings,
                         valueExtractor = { it.methane ?: 0f },
                         lineColor      = ColorMethane,
-                        range          = uiState.selectedRange
+                        range          = uiState.selectedRange,
+                        unit           = "ppm"
                     )
                 }
             }
@@ -256,7 +260,8 @@ fun ChartCard(
     readings: List<SensorReading>,
     valueExtractor: (SensorReading) -> Float,
     lineColor: Color,
-    range: DateRange
+    range: DateRange,
+    unit: String = ""
 ) {
     Card(
         modifier  = Modifier.fillMaxWidth(),
@@ -277,8 +282,9 @@ fun ChartCard(
                         setScaleEnabled(true)
                         setPinchZoom(true)
                         setDrawGridBackground(false)
-                        setExtraBottomOffset(12f)   // espacio para etiquetas rotadas
+                        setExtraBottomOffset(12f)
                         axisRight.isEnabled   = false
+                        marker = CustomMarkerView(context, unit, range)
                         axisLeft.apply {
                             setDrawGridLines(true)
                             gridColor = android.graphics.Color.LTGRAY
@@ -293,6 +299,7 @@ fun ChartCard(
                     }
                 },
                 update = { chart ->
+                    chart.marker = CustomMarkerView(chart.context, unit, range)
                     // Los timestamps en ms tienen 13 dígitos y Float solo soporta ~7.
                     // Usamos SEGUNDOS (dividir entre 1000) para mantener precisión.
                     val nowSec = System.currentTimeMillis() / 1000f

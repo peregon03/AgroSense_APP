@@ -64,7 +64,4 @@ object ApiClient {
         retrofitApi.create(SensorApiService::class.java)
     }
 
-    val alertApi: AlertApi by lazy {
-        retrofitApi.create(AlertApi::class.java)
-    }
 }

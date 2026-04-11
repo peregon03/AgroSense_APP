@@ -9,7 +9,6 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.SignalWifi4Bar
 import androidx.compose.material.icons.filled.SignalWifiOff
@@ -19,10 +18,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.ui.viewmodel.BleViewModel
 import com.example.agrosense.ui.viewmodel.SensorViewModel
+import kotlinx.coroutines.launch
+
+private enum class RemoteAction { ON, OFF, AUTO }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,8 +34,8 @@ fun SensorsListScreen(
     bleViewModel: BleViewModel,
     onBack: () -> Unit,
     onConfigureWifi: (sensor: Sensor) -> Unit = {},
-    onConfigureAlerts: (sensor: Sensor) -> Unit = {},
-    onViewCharts: (sensor: Sensor) -> Unit = {}
+    onViewCharts: (sensor: Sensor) -> Unit = {},
+    onSchedulePump: (sensor: Sensor) -> Unit = {}
 ) {
     val state        by vm.state.collectAsState()
     val bleDeviceId  by bleViewModel.deviceId.collectAsState()
@@ -40,6 +43,9 @@ fun SensorsListScreen(
     val isConnected  by bleViewModel.isConnected.collectAsState()
     val isConnecting by bleViewModel.isConnecting.collectAsState()
     val pumpState    by bleViewModel.pumpState.collectAsState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     var sensorToDelete by remember { mutableStateOf<Sensor?>(null) }
 
@@ -71,6 +77,7 @@ fun SensorsListScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Mis sensores") },
@@ -149,9 +156,29 @@ fun SensorsListScreen(
                             onDisconnect     = { bleViewModel.disconnect() },
                             onPumpToggle     = { bleViewModel.controlPump(!pumpState) },
                             onConfigureWifi  = { onConfigureWifi(sensor) },
-                            onConfigureAlerts = { onConfigureAlerts(sensor) },
                             onViewCharts     = { onViewCharts(sensor) },
-                            onDelete         = { sensorToDelete = sensor }
+                            onSchedulePump   = { onSchedulePump(sensor) },
+                            onDelete         = { sensorToDelete = sensor },
+                            onRemoteControl  = { override ->
+                                vm.setPumpOverride(
+                                    sensorId  = sensor.id,
+                                    override  = override,
+                                    onSuccess = {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                when (override) {
+                                                    true  -> "Riego encendido manualmente"
+                                                    false -> "Riego apagado"
+                                                    null  -> "Modo automático activado"
+                                                }
+                                            )
+                                        }
+                                    },
+                                    onError = { msg ->
+                                        scope.launch { snackbarHostState.showSnackbar("Error: $msg") }
+                                    }
+                                )
+                            }
                         )
                     }
                 }
@@ -173,10 +200,65 @@ private fun SensorCard(
     onDisconnect: () -> Unit,
     onPumpToggle: () -> Unit,
     onConfigureWifi: () -> Unit,
-    onConfigureAlerts: () -> Unit,
     onViewCharts: () -> Unit,
-    onDelete: () -> Unit
+    onSchedulePump: () -> Unit,
+    onDelete: () -> Unit,
+    onRemoteControl: (Boolean?) -> Unit
 ) {
+    var pendingAction by remember { mutableStateOf<RemoteAction?>(null) }
+
+    // ── Diálogo de confirmación de acción remota ──────────────────────────────
+    pendingAction?.let { action ->
+        AlertDialog(
+            onDismissRequest = { pendingAction = null },
+            title = {
+                Text(
+                    when (action) {
+                        RemoteAction.ON   -> "Encender riego"
+                        RemoteAction.OFF  -> "Apagar riego"
+                        RemoteAction.AUTO -> "Modo automático"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    when (action) {
+                        RemoteAction.ON   ->
+                            "¿Encender el riego ahora?\n\n" +
+                            "Esto anulará la programación automática hasta que selecciones " +
+                            "\"Apagar\" o \"Auto\"."
+                        RemoteAction.OFF  ->
+                            "¿Apagar el riego?\n\n" +
+                            "Si hay un riego activo o programado, se interrumpirá."
+                        RemoteAction.AUTO ->
+                            "¿Volver al modo automático?\n\n" +
+                            "El riego seguirá la programación horaria configurada."
+                    }
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val override = when (action) {
+                            RemoteAction.ON   -> true
+                            RemoteAction.OFF  -> false
+                            RemoteAction.AUTO -> null
+                        }
+                        onRemoteControl(override)
+                        pendingAction = null
+                    },
+                    colors = if (action == RemoteAction.OFF)
+                        ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    else ButtonDefaults.buttonColors()
+                ) { Text("Confirmar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingAction = null }) { Text("Cancelar") }
+            }
+        )
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -234,30 +316,105 @@ private fun SensorCard(
 
             Spacer(Modifier.height(10.dp))
 
-            // ── Acciones siempre visibles: gráficas + alertas ────────────────
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            // ── Acciones siempre visibles ─────────────────────────────────
+            OutlinedButton(
+                onClick = onViewCharts,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                OutlinedButton(
-                    onClick = onViewCharts,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Filled.BarChart, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Gráficas")
-                }
-                OutlinedButton(
-                    onClick = onConfigureAlerts,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Filled.NotificationsActive, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Alertas")
-                }
+                Icon(Icons.Filled.BarChart, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Gráficas")
             }
 
+            Spacer(Modifier.height(2.dp))
+
+            OutlinedButton(
+                onClick = onSchedulePump,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Filled.WaterDrop, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Programar riego")
+            }
+
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(8.dp))
+
+            // ── Control remoto ────────────────────────────────────────────
+            Text(
+                "Control remoto",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
             Spacer(Modifier.height(6.dp))
+
+            // Estado actual del control
+            val (overrideBg, overrideText) = when (sensor.pump_manual_override) {
+                true  -> MaterialTheme.colorScheme.primaryContainer to "Riego activo (manual)"
+                false -> MaterialTheme.colorScheme.errorContainer   to "Riego apagado (manual)"
+                null  -> MaterialTheme.colorScheme.surfaceVariant   to "Modo automático"
+            }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                colors = CardDefaults.cardColors(containerColor = overrideBg)
+            ) {
+                Text(
+                    overrideText,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Botones de control
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val isOn   = sensor.pump_manual_override == true
+                val isOff  = sensor.pump_manual_override == false
+                val isAuto = sensor.pump_manual_override == null
+
+                Button(
+                    onClick = { if (!isOn) pendingAction = RemoteAction.ON },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isOn) MaterialTheme.colorScheme.primary
+                                         else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor   = if (isOn) MaterialTheme.colorScheme.onPrimary
+                                         else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) { Text("Encender", style = MaterialTheme.typography.labelSmall) }
+
+                Button(
+                    onClick = { if (!isOff) pendingAction = RemoteAction.OFF },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isOff) MaterialTheme.colorScheme.error
+                                         else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor   = if (isOff) MaterialTheme.colorScheme.onError
+                                         else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) { Text("Apagar", style = MaterialTheme.typography.labelSmall) }
+
+                Button(
+                    onClick = { if (!isAuto) pendingAction = RemoteAction.AUTO },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isAuto) MaterialTheme.colorScheme.secondary
+                                         else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor   = if (isAuto) MaterialTheme.colorScheme.onSecondary
+                                         else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) { Text("Auto", style = MaterialTheme.typography.labelSmall) }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(8.dp))
 
             // ── Botón conectar / desconectar ─────────────────────────────────
             if (!isThisConnected) {
@@ -323,7 +480,7 @@ private fun SensorCard(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(6.dp))
-                        Text(if (pumpState) "Bomba ON" else "Bomba OFF")
+                        Text(if (pumpState) "Riego activo" else "Riego desactivado")
                     }
 
                     OutlinedButton(

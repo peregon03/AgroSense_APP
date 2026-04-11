@@ -6,7 +6,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Sensors
@@ -25,7 +24,6 @@ fun ProfileScreen(
     vm: AuthViewModel,
     onRegisterSensor: () -> Unit = {},
     onViewSensors: () -> Unit = {},
-    onViewCharts: () -> Unit = {},
     onEditProfile: () -> Unit = {},
 ) {
     val state by vm.state.collectAsState()
@@ -139,24 +137,14 @@ fun ProfileScreen(
 
         Spacer(Modifier.height(12.dp))
 
-        // Fila 2: Datos y gráficas + Editar perfil
-        Row(modifier = Modifier.fillMaxWidth()) {
-            ActionCard(
-                modifier = Modifier.weight(1f),
-                title = "Datos y gráficas",
-                subtitle = "Mediciones y reportes",
-                icon = Icons.Filled.BarChart,
-                onClick = onViewCharts
-            )
-            Spacer(Modifier.width(12.dp))
-            ActionCard(
-                modifier = Modifier.weight(1f),
-                title = "Editar perfil",
-                subtitle = "Actualizar tu información",
-                icon = Icons.Filled.Edit,
-                onClick = onEditProfile
-            )
-        }
+        // Fila 2: Editar perfil (ancho completo)
+        ActionCard(
+            modifier = Modifier.fillMaxWidth(),
+            title = "Editar perfil",
+            subtitle = "Actualizar tu información",
+            icon = Icons.Filled.Edit,
+            onClick = onEditProfile
+        )
 
         Spacer(Modifier.height(20.dp))
 
