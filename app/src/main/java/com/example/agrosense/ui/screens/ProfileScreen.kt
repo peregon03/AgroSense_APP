@@ -2,12 +2,15 @@ package com.example.agrosense.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,6 +28,7 @@ fun ProfileScreen(
     onRegisterSensor: () -> Unit = {},
     onViewSensors: () -> Unit = {},
     onEditProfile: () -> Unit = {},
+    onNavigateHome: () -> Unit = {},
 ) {
     val state by vm.state.collectAsState()
     val user = state.user
@@ -33,160 +37,174 @@ fun ProfileScreen(
         vm.loadMe()
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-
-        // Header del perfil
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+    Scaffold(
+        topBar = {
+            Surface(
+                tonalElevation = 2.dp,
+                color = MaterialTheme.colorScheme.surface
             ) {
-                Box(
+                Row(
                     modifier = Modifier
-                        .size(54.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Sensors,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-
-                Spacer(Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Bienvenido",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Text(
-                        text = if (user != null) "${user.first_name} ${user.last_name}" else "Cargando usuario...",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    Text(
-                        text = user?.email ?: "",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Person,
+                                contentDescription = "Foto de perfil",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "AgroSense",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
-        }
+        },
 
-        // Error
-        state.error?.let { err ->
-            Spacer(Modifier.height(10.dp))
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                shape = RoundedCornerShape(14.dp)
+        // BottomNavBar — "Panel" activo
+        bottomBar = {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
             ) {
-                Text(
-                    text = err,
-                    modifier = Modifier.padding(12.dp),
-                    color = MaterialTheme.colorScheme.onErrorContainer
+                NavigationBarItem(
+                    selected = true,
+                    onClick  = onNavigateHome,
+                    icon     = { Icon(Icons.Filled.Dashboard, contentDescription = "Panel") },
+                    label    = { Text("Panel") }
+                )
+                // "Perfil" navega a EditProfileScreen, que ahora contiene Cerrar Sesion
+                NavigationBarItem(
+                    selected = false,
+                    onClick  = onEditProfile,
+                    icon     = { Icon(Icons.Filled.Edit, contentDescription = "Perfil") },
+                    label    = { Text("Perfil") }
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick  = onViewSensors,
+                    icon     = { Icon(Icons.Filled.Sensors, contentDescription = "Sensores") },
+                    label    = { Text("Sensores") }
                 )
             }
         }
+    ) { innerPadding ->
 
-        Spacer(Modifier.height(16.dp))
-
-        Text(
-            text = "Acciones rápidas",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        // Fila 1: Agregar sensor + Ver sensores
-        Row(modifier = Modifier.fillMaxWidth()) {
-            ActionCard(
-                modifier = Modifier.weight(1f),
-                title = "Agregar sensor",
-                subtitle = "Buscar y vincular dispositivos",
-                icon = Icons.Filled.AddCircle,
-                onClick = onRegisterSensor
-            )
-            Spacer(Modifier.width(12.dp))
-            ActionCard(
-                modifier = Modifier.weight(1f),
-                title = "Ver sensores",
-                subtitle = "Listado y estado",
-                icon = Icons.Filled.Sensors,
-                onClick = onViewSensors
-            )
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // Fila 2: Editar perfil (ancho completo)
-        ActionCard(
-            modifier = Modifier.fillMaxWidth(),
-            title = "Editar perfil",
-            subtitle = "Actualizar tu información",
-            icon = Icons.Filled.Edit,
-            onClick = onEditProfile
-        )
-
-        Spacer(Modifier.height(20.dp))
-
-        Divider()
-
-        Spacer(Modifier.height(16.dp))
-
-        Button(
-            onClick = { vm.logout() },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            enabled = !state.isLoading
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
         ) {
-            Icon(Icons.Filled.ExitToApp, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(if (state.isLoading) "Cerrando..." else "Cerrar sesión")
+
+            Spacer(Modifier.height(16.dp))
+
+            // Error card — logica original intacta
+            state.error?.let { err ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors   = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text(
+                        text     = err,
+                        modifier = Modifier.padding(12.dp),
+                        color    = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
+            // Saludo con nombre del usuario
+            Text(
+                text       = "Bienvenido Nuevamente,",
+                style      = MaterialTheme.typography.bodyMedium,
+                color      = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text       = if (user != null) "${user.first_name} ${user.last_name}" else "...",
+                style      = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color      = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            Text(
+                text       = "Acciones rapidas",
+                style      = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // Fila 1: Agregar sensor + Ver sensores
+            Row(modifier = Modifier.fillMaxWidth()) {
+                ActionCard(
+                    modifier  = Modifier.weight(1f),
+                    title     = "Agregar sensor",
+                    subtitle  = "Buscar y vincular dispositivos",
+                    icon      = Icons.Filled.AddCircle,
+                    onClick   = onRegisterSensor      // logica original intacta
+                )
+                Spacer(Modifier.width(12.dp))
+                ActionCard(
+                    modifier  = Modifier.weight(1f),
+                    title     = "Ver sensores",
+                    subtitle  = "Listado y estado",
+                    icon      = Icons.Filled.Sensors,
+                    onClick   = onViewSensors          // logica original intacta
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Text(
+                text     = "AgroSense - Panel de usuario",
+                style    = MaterialTheme.typography.bodySmall,
+                color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+
+            Spacer(Modifier.height(16.dp))
         }
-
-        Spacer(Modifier.height(10.dp))
-
-        Text(
-            text = "AgroSense • Panel de usuario",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.align(Alignment.CenterHorizontally)
-        )
     }
 }
 
 @Composable
 private fun ActionCard(
-    modifier: Modifier = Modifier,
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    onClick: () -> Unit
+    modifier  : Modifier = Modifier,
+    title     : String,
+    subtitle  : String,
+    icon      : ImageVector,
+    onClick   : () -> Unit
 ) {
     Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
+        modifier  = modifier,
+        shape     = RoundedCornerShape(18.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        onClick = onClick
+        onClick   = onClick
     ) {
         Column(
             modifier = Modifier
@@ -206,20 +224,10 @@ private fun ActionCard(
                     tint = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
-
             Spacer(Modifier.height(10.dp))
-
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
+            Text(text = title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text(text = subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
