@@ -158,7 +158,7 @@ fun LoginScreen(
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                text = "Tu cultivo, tu futuro",
+                                text = "Bienvenido",
                                 color = AgroPrimary.copy(alpha = 0.7f),
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 13.sp
