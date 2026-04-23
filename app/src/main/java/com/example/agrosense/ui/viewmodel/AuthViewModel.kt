@@ -33,6 +33,13 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     private fun parseMessage(body: String): String =
         try { JSONObject(body).optString("message", body) } catch (_: Exception) { body }
 
+    private fun netError(e: Exception): String = when (e) {
+        is java.net.ConnectException       -> "No se pudo conectar al servidor. Verifica que el servidor esté encendido."
+        is java.net.SocketTimeoutException -> "El servidor tardó demasiado en responder. Intenta de nuevo."
+        is java.net.UnknownHostException   -> "No hay conexión a internet o el servidor no existe."
+        else                               -> "Error de red: ${e.message}"
+    }
+
     // ── Sesión ───────────────────────────────────────────────────────────────
 
     fun checkSession() {
@@ -78,7 +85,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
             } catch (e: Exception) {
-                _state.value = AuthState(isLoading = false, error = e.message ?: "Error desconocido")
+                _state.value = AuthState(isLoading = false, error = netError(e))
             }
         }
     }
@@ -112,7 +119,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                     _state.value = AuthState(isLoading = false, error = msg)
                 }
             } catch (e: Exception) {
-                _state.value = AuthState(isLoading = false, error = e.message ?: "Error desconocido")
+                _state.value = AuthState(isLoading = false, error = netError(e))
             }
         }
     }
@@ -138,7 +145,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                     onError(msg)
                 }
             } catch (e: Exception) {
-                onError(e.message ?: "Error de conexión")
+                onError(netError(e))
             }
         }
     }
@@ -160,7 +167,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                     onError(msg)
                 }
             } catch (e: Exception) {
-                onError(e.message ?: "Error de conexión")
+                onError(netError(e))
             }
         }
     }
@@ -182,7 +189,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                 if (res.isSuccessful) onSuccess()
                 else onError(parseMessage(res.errorBody()?.string() ?: ""))
             } catch (e: Exception) {
-                onError(e.message ?: "Error de conexión")
+                onError(netError(e))
             }
         }
     }
@@ -201,7 +208,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                 if (res.isSuccessful) onSuccess()
                 else onError(parseMessage(res.errorBody()?.string() ?: ""))
             } catch (e: Exception) {
-                onError(e.message ?: "Error de conexión")
+                onError(netError(e))
             }
         }
     }
@@ -217,7 +224,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                 _state.value = _state.value.copy(user = res.user, error = null)
             } catch (e: Exception) {
                 if (e is HttpException && (e.code() == 401 || e.code() == 403)) logout()
-                else _state.value = _state.value.copy(error = e.message ?: "Error cargando perfil")
+                else _state.value = _state.value.copy(error = netError(e))
             }
         }
     }
@@ -249,7 +256,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                     onError(parseMessage(res.errorBody()?.string() ?: ""))
                 }
             } catch (e: Exception) {
-                onError(e.message ?: "Error desconocido")
+                onError(netError(e))
             }
         }
     }
@@ -270,7 +277,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                 if (res.isSuccessful) onSuccess()
                 else onError(parseMessage(res.errorBody()?.string() ?: ""))
             } catch (e: Exception) {
-                onError(e.message ?: "Error desconocido")
+                onError(netError(e))
             }
         }
     }
