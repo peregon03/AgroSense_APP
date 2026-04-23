@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.*
@@ -27,6 +28,7 @@ fun ProfileScreen(
     vm: AuthViewModel,
     onRegisterSensor: () -> Unit = {},
     onViewSensors: () -> Unit = {},
+    onViewShared: () -> Unit = {},
     onEditProfile: () -> Unit = {},
     onNavigateHome: () -> Unit = {},
 ) {
@@ -166,7 +168,7 @@ fun ProfileScreen(
                     title     = "Agregar sensor",
                     subtitle  = "Buscar y vincular dispositivos",
                     icon      = Icons.Filled.AddCircle,
-                    onClick   = onRegisterSensor      // logica original intacta
+                    onClick   = onRegisterSensor
                 )
                 Spacer(Modifier.width(12.dp))
                 ActionCard(
@@ -174,9 +176,20 @@ fun ProfileScreen(
                     title     = "Ver sensores",
                     subtitle  = "Listado y estado",
                     icon      = Icons.Filled.Sensors,
-                    onClick   = onViewSensors          // logica original intacta
+                    onClick   = onViewSensors
                 )
             }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Fila 2: Compartidos conmigo
+            ActionCard(
+                modifier  = Modifier.fillMaxWidth(),
+                title     = "Compartidos conmigo",
+                subtitle  = "Sensores que otros usuarios compartieron contigo",
+                icon      = Icons.Filled.Group,
+                onClick   = onViewShared
+            )
 
             Spacer(Modifier.height(24.dp))
 
