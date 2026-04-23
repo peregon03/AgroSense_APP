@@ -39,6 +39,9 @@ class MainActivity : ComponentActivity() {
             var wifiTargetSensor    by remember { mutableStateOf<Sensor?>(null) }
             var chartsTargetSensor  by remember { mutableStateOf<Sensor?>(null) }
             var pumpTargetSensor    by remember { mutableStateOf<Sensor?>(null) }
+            var shareTargetSensor   by remember { mutableStateOf<Sensor?>(null) }
+            var logsTargetSensor    by remember { mutableStateOf<Sensor?>(null) }
+            var reportTargetSensor  by remember { mutableStateOf<Sensor?>(null) }
             // WiFi config cuando viene directo desde BLE (sin objeto Sensor completo)
             var pendingWifiName     by remember { mutableStateOf("") }
             var pendingWifiApiKey   by remember { mutableStateOf("") }
@@ -73,6 +76,7 @@ class MainActivity : ComponentActivity() {
                         vm               = authVm,
                         onRegisterSensor = { screen = "ble" },
                         onViewSensors    = { screen = "sensors_list" },
+                        onViewShared     = { screen = "shared_sensors" },
                         onEditProfile    = { screen = "edit_profile" }
                     )
 
@@ -109,8 +113,74 @@ class MainActivity : ComponentActivity() {
                         onViewCharts = { sensor ->
                             chartsTargetSensor = sensor
                             screen = "charts"
+                        },
+                        onViewDeleted = { screen = "deleted_sensors" },
+                        onShareSensor = { sensor ->
+                            shareTargetSensor = sensor
+                            screen = "share_sensor"
+                        },
+                        onViewLogs = { sensor ->
+                            logsTargetSensor = sensor
+                            screen = "action_logs"
+                        },
+                        onGenerateReport = { sensor ->
+                            reportTargetSensor = sensor
+                            screen = "report"
                         }
                     )
+
+                "deleted_sensors" ->
+                    DeletedSensorsScreen(
+                        sensorViewModel = sensorVm,
+                        onBack          = { screen = "sensors_list" }
+                    )
+
+                "shared_sensors" ->
+                    SharedSensorsScreen(
+                        sensorViewModel = sensorVm,
+                        onBack          = { screen = "sensors_list" },
+                        onViewCharts    = { sensor -> chartsTargetSensor = sensor; screen = "charts" },
+                        onSchedulePump  = { sensor -> pumpTargetSensor = sensor; screen = "pump_schedule" }
+                    )
+
+                "share_sensor" -> {
+                    val sensor = shareTargetSensor
+                    if (sensor != null) {
+                        ShareSensorScreen(
+                            sensor          = sensor,
+                            sensorViewModel = sensorVm,
+                            onBack          = { screen = "sensors_list" }
+                        )
+                    } else {
+                        LaunchedEffect(Unit) { screen = "sensors_list" }
+                    }
+                }
+
+                "report" -> {
+                    val sensor = reportTargetSensor
+                    if (sensor != null) {
+                        ReportScreen(
+                            sensor          = sensor,
+                            sensorViewModel = sensorVm,
+                            onBack          = { screen = "sensors_list" }
+                        )
+                    } else {
+                        LaunchedEffect(Unit) { screen = "sensors_list" }
+                    }
+                }
+
+                "action_logs" -> {
+                    val sensor = logsTargetSensor
+                    if (sensor != null) {
+                        ActionLogsScreen(
+                            sensor          = sensor,
+                            sensorViewModel = sensorVm,
+                            onBack          = { screen = "sensors_list" }
+                        )
+                    } else {
+                        LaunchedEffect(Unit) { screen = "sensors_list" }
+                    }
+                }
 
                 "wifi_config" -> {
                     val sensor = wifiTargetSensor
