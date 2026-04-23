@@ -9,7 +9,11 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SignalWifi4Bar
 import androidx.compose.material.icons.filled.SignalWifiOff
 import androidx.compose.material.icons.filled.Wifi
@@ -35,14 +39,18 @@ fun SensorsListScreen(
     onBack: () -> Unit,
     onConfigureWifi: (sensor: Sensor) -> Unit = {},
     onViewCharts: (sensor: Sensor) -> Unit = {},
-    onSchedulePump: (sensor: Sensor) -> Unit = {}
+    onSchedulePump: (sensor: Sensor) -> Unit = {},
+    onViewDeleted: () -> Unit = {},
+    onShareSensor: (sensor: Sensor) -> Unit = {},
+    onViewLogs: (sensor: Sensor) -> Unit = {},
+    onGenerateReport: (sensor: Sensor) -> Unit = {}
 ) {
-    val state        by vm.state.collectAsState()
-    val bleDeviceId  by bleViewModel.deviceId.collectAsState()
-    val reading      by bleViewModel.reading.collectAsState()
-    val isConnected  by bleViewModel.isConnected.collectAsState()
-    val isConnecting by bleViewModel.isConnecting.collectAsState()
-    val pumpState    by bleViewModel.pumpState.collectAsState()
+    val state         by vm.state.collectAsState()
+    val bleDeviceId   by bleViewModel.deviceId.collectAsState()
+    val reading       by bleViewModel.reading.collectAsState()
+    val isConnected   by bleViewModel.isConnected.collectAsState()
+    val isConnecting  by bleViewModel.isConnecting.collectAsState()
+    val pumpState     by bleViewModel.pumpState.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -58,8 +66,8 @@ fun SensorsListScreen(
             title = { Text("Eliminar sensor") },
             text = {
                 Text(
-                    "¿Estás seguro de que quieres eliminar \"${sensor.name}\"? " +
-                            "Esta acción no se puede deshacer."
+                    "¿Eliminar \"${sensor.name}\"?\n\n" +
+                    "Se guardará un respaldo por 30 días. Podrás restaurarlo desde \"Sensores eliminados\"."
                 )
             },
             confirmButton = {
@@ -84,6 +92,11 @@ fun SensorsListScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Volver")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onViewDeleted) {
+                        Icon(Icons.Filled.DeleteSweep, contentDescription = "Sensores eliminados")
                     }
                 }
             )
@@ -113,37 +126,31 @@ fun SensorsListScreen(
                 Spacer(Modifier.height(12.dp))
             }
 
-            if (!state.isLoading && state.sensors.isEmpty()) {
+            val isEmpty = state.sensors.isEmpty()
+
+            if (!state.isLoading && isEmpty) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 48.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Filled.Sensors,
-                            contentDescription = null,
+                        Icon(Icons.Filled.Sensors, contentDescription = null,
                             modifier = Modifier.size(56.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(12.dp))
-                        Text(
-                            "No tienes sensores registrados.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            "Usa «Agregar sensor» para vincular uno.",
+                        Text("No tienes sensores registrados.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Usa «Agregar sensor» para vincular uno.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+
+                    // ── Mis sensores ─────────────────────────────────────────
                     items(state.sensors, key = { it.id }) { sensor ->
-                        val isThisConnected = isConnected &&
-                                bleDeviceId?.lowercase() == sensor.device_id.lowercase()
+                        val isThisConnected  = isConnected && bleDeviceId?.lowercase() == sensor.device_id.lowercase()
                         val isThisConnecting = isConnecting && !isConnected
 
                         SensorCard(
@@ -158,6 +165,9 @@ fun SensorsListScreen(
                             onConfigureWifi  = { onConfigureWifi(sensor) },
                             onViewCharts     = { onViewCharts(sensor) },
                             onSchedulePump   = { onSchedulePump(sensor) },
+                            onShare          = { onShareSensor(sensor) },
+                            onViewLogs       = { onViewLogs(sensor) },
+                            onGenerateReport = { onGenerateReport(sensor) },
                             onDelete         = { sensorToDelete = sensor },
                             onRemoteControl  = { override ->
                                 vm.setPumpOverride(
@@ -181,6 +191,7 @@ fun SensorsListScreen(
                             }
                         )
                     }
+
                 }
             }
         }
@@ -202,6 +213,9 @@ private fun SensorCard(
     onConfigureWifi: () -> Unit,
     onViewCharts: () -> Unit,
     onSchedulePump: () -> Unit,
+    onShare: () -> Unit,
+    onViewLogs: () -> Unit,
+    onGenerateReport: () -> Unit,
     onDelete: () -> Unit,
     onRemoteControl: (Boolean?) -> Unit
 ) {
@@ -287,16 +301,20 @@ private fun SensorCard(
                     Spacer(Modifier.width(6.dp))
                     Text(sensor.name, style = MaterialTheme.typography.titleMedium)
                 }
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "Eliminar",
+                IconButton(onClick = onViewLogs, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Filled.History, contentDescription = "Historial",
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = onShare, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Filled.Share, contentDescription = "Compartir",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Eliminar",
                         tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
+                        modifier = Modifier.size(20.dp))
                 }
             }
 
@@ -335,6 +353,17 @@ private fun SensorCard(
                 Icon(Icons.Filled.WaterDrop, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Programar riego")
+            }
+
+            Spacer(Modifier.height(2.dp))
+
+            OutlinedButton(
+                onClick = onGenerateReport,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Filled.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Generar informe PDF")
             }
 
             Spacer(Modifier.height(8.dp))
