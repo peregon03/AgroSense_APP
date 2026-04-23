@@ -5,11 +5,19 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.agrosense.data.api.ApiClient
 import com.example.agrosense.data.api.RegisterSensorRequest
+import com.example.agrosense.data.model.ActionLog
+import com.example.agrosense.data.model.DeletedSensorBackup
+import com.example.agrosense.data.model.IrrigationSchedule
+import com.example.agrosense.data.model.SensorShare
+import com.example.agrosense.data.model.SharePermissionsRequest
+import com.example.agrosense.data.model.ShareSensorRequest
+import com.example.agrosense.data.model.SharedSensorEntry
+import com.example.agrosense.data.model.IrrigationScheduleRequest
 import com.example.agrosense.data.model.PumpOverrideRequest
-import com.example.agrosense.data.model.PumpSchedule
 import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.data.model.SensorReading
 import com.example.agrosense.data.model.ThresholdsRequest
+import com.example.agrosense.data.model.ToggleScheduleRequest
 import com.example.agrosense.data.storage.SessionManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,8 +43,32 @@ data class SensorUiState(
     val readingsCount: Int = 0
 )
 
-data class PumpScheduleUiState(
-    val schedule: PumpSchedule? = null,
+data class IrrigationSchedulesUiState(
+    val schedules: List<IrrigationSchedule> = emptyList(),
+    val isLoading: Boolean = false,
+    val error: String? = null
+)
+
+data class DeletedSensorsUiState(
+    val backups: List<DeletedSensorBackup> = emptyList(),
+    val isLoading: Boolean = false,
+    val error: String? = null
+)
+
+data class SharedSensorsUiState(
+    val sensors: List<SharedSensorEntry> = emptyList(),
+    val isLoading: Boolean = false,
+    val error: String? = null
+)
+
+data class SensorSharesUiState(
+    val shares: List<SensorShare> = emptyList(),
+    val isLoading: Boolean = false,
+    val error: String? = null
+)
+
+data class ActionLogsUiState(
+    val logs: List<ActionLog> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -49,8 +81,20 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(SensorUiState())
     val state: StateFlow<SensorUiState> = _state
 
-    private val _pumpScheduleState = MutableStateFlow(PumpScheduleUiState())
-    val pumpScheduleState: StateFlow<PumpScheduleUiState> = _pumpScheduleState
+    private val _irrigationState = MutableStateFlow(IrrigationSchedulesUiState())
+    val irrigationState: StateFlow<IrrigationSchedulesUiState> = _irrigationState
+
+    private val _deletedState = MutableStateFlow(DeletedSensorsUiState())
+    val deletedState: StateFlow<DeletedSensorsUiState> = _deletedState
+
+    private val _sharedSensorsState = MutableStateFlow(SharedSensorsUiState())
+    val sharedSensorsState: StateFlow<SharedSensorsUiState> = _sharedSensorsState
+
+    private val _sensorSharesState = MutableStateFlow(SensorSharesUiState())
+    val sensorSharesState: StateFlow<SensorSharesUiState> = _sensorSharesState
+
+    private val _actionLogsState = MutableStateFlow(ActionLogsUiState())
+    val actionLogsState: StateFlow<ActionLogsUiState> = _actionLogsState
 
     // ── Cargar lista de sensores ───────────────────────────────────────────
 
@@ -73,7 +117,7 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
-                    error = "Error de conexión",
+                    error = netError(e),
                     isLoading = false
                 )
             }
@@ -106,7 +150,7 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
                     onError("Error al registrar: ${response.code()}")
                 }
             } catch (e: Exception) {
-                onError("Error de conexión: ${e.message}")
+                onError(netError(e))
             }
         }
     }
@@ -156,7 +200,7 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
                     onError(msg)
                 }
             } catch (e: Exception) {
-                onError("Error de conexión: ${e.message}")
+                onError(netError(e))
             }
         }
     }
@@ -194,7 +238,7 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
-                    readingsError = "Error de conexión",
+                    readingsError = netError(e),
                     isLoadingReadings = false
                 )
             }
@@ -229,7 +273,7 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
                     onError(msg)
                 }
             } catch (e: Exception) {
-                onError("Error de conexión: ${e.message}")
+                onError(netError(e))
             }
         }
     }
@@ -238,62 +282,430 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(error = null)
     }
 
-    // ── Programación de bomba ──────────────────────────────────────────────
+    // ── Programaciones de riego (múltiples) ───────────────────────────────────
 
-    fun loadPumpSchedule(sensorId: Int) {
+    fun loadIrrigationSchedules(sensorId: Int) {
         viewModelScope.launch {
-            _pumpScheduleState.value = _pumpScheduleState.value.copy(isLoading = true, error = null)
+            _irrigationState.value = _irrigationState.value.copy(isLoading = true, error = null)
             try {
                 val token = session.getToken() ?: return@launch
-                val response = api.getPumpSchedule("Bearer $token", sensorId)
+                val response = api.getIrrigationSchedules("Bearer $token", sensorId)
                 if (response.isSuccessful) {
-                    _pumpScheduleState.value = PumpScheduleUiState(
-                        schedule = response.body()?.schedule,
-                        isLoading = false
+                    _irrigationState.value = IrrigationSchedulesUiState(
+                        schedules  = response.body()?.schedules ?: emptyList(),
+                        isLoading  = false
                     )
                 } else {
-                    _pumpScheduleState.value = PumpScheduleUiState(
+                    _irrigationState.value = IrrigationSchedulesUiState(
                         isLoading = false,
-                        error = "Error al cargar programación (${response.code()})"
+                        error     = "Error al cargar programaciones (${response.code()})"
                     )
                 }
             } catch (e: Exception) {
-                _pumpScheduleState.value = PumpScheduleUiState(
+                _irrigationState.value = IrrigationSchedulesUiState(
                     isLoading = false,
-                    error = "Error de conexión"
+                    error     = netError(e)
                 )
             }
         }
     }
 
-    fun savePumpSchedule(
+    fun createIrrigationSchedule(
         sensorId: Int,
-        schedule: PumpSchedule,
-        onResult: (success: Boolean) -> Unit
+        request: IrrigationScheduleRequest,
+        onResult: (success: Boolean, error: String?) -> Unit
     ) {
         viewModelScope.launch {
-            _pumpScheduleState.value = _pumpScheduleState.value.copy(isLoading = true, error = null)
+            _irrigationState.value = _irrigationState.value.copy(isLoading = true, error = null)
+            try {
+                val token = session.getToken() ?: run { onResult(false, "No hay sesión activa"); return@launch }
+                val response = api.createIrrigationSchedule("Bearer $token", sensorId, request)
+                if (response.isSuccessful) {
+                    val newSchedule = response.body()?.schedule
+                    if (newSchedule != null) {
+                        _irrigationState.value = _irrigationState.value.copy(
+                            schedules = (_irrigationState.value.schedules + newSchedule)
+                                .sortedBy { it.start_time },
+                            isLoading = false
+                        )
+                    }
+                    onResult(true, null)
+                } else {
+                    val msg = parseError(response.errorBody()?.string(), response.code())
+                    _irrigationState.value = _irrigationState.value.copy(isLoading = false, error = msg)
+                    onResult(false, msg)
+                }
+            } catch (e: Exception) {
+                val msg = netError(e)
+                _irrigationState.value = _irrigationState.value.copy(isLoading = false, error = msg)
+                onResult(false, msg)
+            }
+        }
+    }
+
+    fun updateIrrigationSchedule(
+        sensorId: Int,
+        scheduleId: Int,
+        request: IrrigationScheduleRequest,
+        onResult: (success: Boolean, error: String?) -> Unit
+    ) {
+        viewModelScope.launch {
+            _irrigationState.value = _irrigationState.value.copy(isLoading = true, error = null)
+            try {
+                val token = session.getToken() ?: run { onResult(false, "No hay sesión activa"); return@launch }
+                val response = api.updateIrrigationSchedule("Bearer $token", sensorId, scheduleId, request)
+                if (response.isSuccessful) {
+                    val updated = response.body()?.schedule
+                    if (updated != null) {
+                        _irrigationState.value = _irrigationState.value.copy(
+                            schedules = _irrigationState.value.schedules
+                                .map { if (it.id == scheduleId) updated else it }
+                                .sortedBy { it.start_time },
+                            isLoading = false
+                        )
+                    }
+                    onResult(true, null)
+                } else {
+                    val msg = parseError(response.errorBody()?.string(), response.code())
+                    _irrigationState.value = _irrigationState.value.copy(isLoading = false, error = msg)
+                    onResult(false, msg)
+                }
+            } catch (e: Exception) {
+                val msg = netError(e)
+                _irrigationState.value = _irrigationState.value.copy(isLoading = false, error = msg)
+                onResult(false, msg)
+            }
+        }
+    }
+
+    fun toggleIrrigationSchedule(sensorId: Int, scheduleId: Int, enabled: Boolean) {
+        viewModelScope.launch {
+            // Actualización optimista en UI
+            _irrigationState.value = _irrigationState.value.copy(
+                schedules = _irrigationState.value.schedules.map {
+                    if (it.id == scheduleId) it.copy(enabled = enabled) else it
+                }
+            )
             try {
                 val token = session.getToken() ?: return@launch
-                val response = api.updatePumpSchedule("Bearer $token", sensorId, schedule)
+                api.toggleIrrigationSchedule("Bearer $token", sensorId, scheduleId, ToggleScheduleRequest(enabled))
+            } catch (_: Exception) {
+                // Revertir si falla
+                _irrigationState.value = _irrigationState.value.copy(
+                    schedules = _irrigationState.value.schedules.map {
+                        if (it.id == scheduleId) it.copy(enabled = !enabled) else it
+                    }
+                )
+            }
+        }
+    }
+
+    fun deleteIrrigationSchedule(sensorId: Int, scheduleId: Int, onResult: (success: Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val token = session.getToken() ?: run { onResult(false); return@launch }
+                val response = api.deleteIrrigationSchedule("Bearer $token", sensorId, scheduleId)
                 if (response.isSuccessful) {
-                    _pumpScheduleState.value = PumpScheduleUiState(
-                        schedule = response.body()?.schedule,
-                        isLoading = false
+                    _irrigationState.value = _irrigationState.value.copy(
+                        schedules = _irrigationState.value.schedules.filter { it.id != scheduleId }
                     )
                     onResult(true)
                 } else {
-                    val errBody = response.errorBody()?.string()
-                    val msg = try {
-                        org.json.JSONObject(errBody ?: "").getString("message")
-                    } catch (_: Exception) { "Error al guardar (${response.code()})" }
-                    _pumpScheduleState.value = PumpScheduleUiState(isLoading = false, error = msg)
                     onResult(false)
                 }
             } catch (e: Exception) {
-                _pumpScheduleState.value = PumpScheduleUiState(isLoading = false, error = "Error de conexión")
                 onResult(false)
             }
         }
+    }
+
+    // ── Sensores compartidos conmigo ──────────────────────────────────────────
+
+    fun loadSharedWithMe() {
+        viewModelScope.launch {
+            _sharedSensorsState.value = _sharedSensorsState.value.copy(isLoading = true, error = null)
+            try {
+                val token = session.getToken() ?: return@launch
+                val response = api.getSharedWithMe("Bearer $token")
+                if (response.isSuccessful) {
+                    _sharedSensorsState.value = SharedSensorsUiState(
+                        sensors   = response.body()?.shared_sensors ?: emptyList(),
+                        isLoading = false
+                    )
+                } else {
+                    _sharedSensorsState.value = SharedSensorsUiState(isLoading = false, error = "Error cargando sensores compartidos")
+                }
+            } catch (e: Exception) {
+                _sharedSensorsState.value = SharedSensorsUiState(isLoading = false, error = netError(e))
+            }
+        }
+    }
+
+    fun setPumpOverrideShared(
+        sensorId: Int,
+        override: Boolean?,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val token = session.getToken() ?: run { onError("No hay sesión activa"); return@launch }
+                val response = api.setPumpOverride("Bearer $token", sensorId, PumpOverrideRequest(override))
+                if (response.isSuccessful) {
+                    _sharedSensorsState.value = _sharedSensorsState.value.copy(
+                        sensors = _sharedSensorsState.value.sensors.map { s ->
+                            if (s.sensor_id == sensorId) s.copy(pump_manual_override = override) else s
+                        }
+                    )
+                    onSuccess()
+                } else {
+                    val msg = parseError(response.errorBody()?.string(), response.code())
+                    onError(msg)
+                }
+            } catch (e: Exception) {
+                onError(netError(e))
+            }
+        }
+    }
+
+    // ── Gestión de accesos compartidos (propietario) ───────────────────────────
+
+    fun loadSensorShares(sensorId: Int) {
+        viewModelScope.launch {
+            _sensorSharesState.value = _sensorSharesState.value.copy(isLoading = true, error = null)
+            try {
+                val token = session.getToken() ?: return@launch
+                val response = api.getSensorShares("Bearer $token", sensorId)
+                if (response.isSuccessful) {
+                    _sensorSharesState.value = SensorSharesUiState(
+                        shares    = response.body()?.shares ?: emptyList(),
+                        isLoading = false
+                    )
+                } else {
+                    _sensorSharesState.value = SensorSharesUiState(isLoading = false, error = "Error cargando accesos")
+                }
+            } catch (e: Exception) {
+                _sensorSharesState.value = SensorSharesUiState(isLoading = false, error = netError(e))
+            }
+        }
+    }
+
+    fun shareSensor(
+        sensorId: Int,
+        request: ShareSensorRequest,
+        onResult: (success: Boolean, error: String?) -> Unit
+    ) {
+        viewModelScope.launch {
+            _sensorSharesState.value = _sensorSharesState.value.copy(isLoading = true, error = null)
+            try {
+                val token = session.getToken() ?: run { onResult(false, "No hay sesión activa"); return@launch }
+                val response = api.shareSensor("Bearer $token", sensorId, request)
+                if (response.isSuccessful) {
+                    val newShare = response.body()?.share
+                    if (newShare != null) {
+                        val existing = _sensorSharesState.value.shares.any { it.id == newShare.id }
+                        _sensorSharesState.value = _sensorSharesState.value.copy(
+                            shares = if (existing)
+                                _sensorSharesState.value.shares.map { if (it.id == newShare.id) newShare else it }
+                            else
+                                _sensorSharesState.value.shares + newShare,
+                            isLoading = false
+                        )
+                    }
+                    onResult(true, null)
+                } else {
+                    val msg = parseError(response.errorBody()?.string(), response.code())
+                    _sensorSharesState.value = _sensorSharesState.value.copy(isLoading = false, error = msg)
+                    onResult(false, msg)
+                }
+            } catch (e: Exception) {
+                _sensorSharesState.value = _sensorSharesState.value.copy(isLoading = false, error = netError(e))
+                onResult(false, netError(e))
+            }
+        }
+    }
+
+    fun updateSharePermissions(
+        sensorId: Int,
+        shareId: Int,
+        request: SharePermissionsRequest
+    ) {
+        viewModelScope.launch {
+            try {
+                val token = session.getToken() ?: return@launch
+                val response = api.updateSharePermissions("Bearer $token", sensorId, shareId, request)
+                if (response.isSuccessful) {
+                    val updated = response.body()?.share ?: return@launch
+                    _sensorSharesState.value = _sensorSharesState.value.copy(
+                        shares = _sensorSharesState.value.shares.map { if (it.id == shareId) updated else it }
+                    )
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun revokeShare(sensorId: Int, shareId: Int, onResult: (success: Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val token = session.getToken() ?: run { onResult(false); return@launch }
+                val response = api.revokeShare("Bearer $token", sensorId, shareId)
+                if (response.isSuccessful) {
+                    _sensorSharesState.value = _sensorSharesState.value.copy(
+                        shares = _sensorSharesState.value.shares.filter { it.id != shareId }
+                    )
+                    onResult(true)
+                } else {
+                    onResult(false)
+                }
+            } catch (e: Exception) {
+                onResult(false)
+            }
+        }
+    }
+
+    // ── Historial de acciones ─────────────────────────────────────────────────
+
+    fun loadActionLogs(sensorId: Int) {
+        viewModelScope.launch {
+            _actionLogsState.value = ActionLogsUiState(isLoading = true)
+            try {
+                val token = session.getToken() ?: return@launch
+                val response = api.getActionLogs("Bearer $token", sensorId)
+                if (response.isSuccessful) {
+                    _actionLogsState.value = ActionLogsUiState(
+                        logs      = response.body()?.logs ?: emptyList(),
+                        isLoading = false
+                    )
+                } else {
+                    _actionLogsState.value = ActionLogsUiState(
+                        isLoading = false,
+                        error     = "Error al cargar historial (${response.code()})"
+                    )
+                }
+            } catch (e: Exception) {
+                _actionLogsState.value = ActionLogsUiState(isLoading = false, error = netError(e))
+            }
+        }
+    }
+
+    // ── Sensores eliminados / respaldos ───────────────────────────────────────
+
+    fun loadDeletedSensors() {
+        viewModelScope.launch {
+            _deletedState.value = _deletedState.value.copy(isLoading = true, error = null)
+            try {
+                val token = session.getToken() ?: return@launch
+                val response = api.getDeletedSensors("Bearer $token")
+                if (response.isSuccessful) {
+                    _deletedState.value = DeletedSensorsUiState(
+                        backups   = response.body()?.backups ?: emptyList(),
+                        isLoading = false
+                    )
+                } else {
+                    _deletedState.value = DeletedSensorsUiState(
+                        isLoading = false,
+                        error     = "Error al cargar respaldos (${response.code()})"
+                    )
+                }
+            } catch (e: Exception) {
+                _deletedState.value = DeletedSensorsUiState(isLoading = false, error = netError(e))
+            }
+        }
+    }
+
+    fun restoreSensor(
+        backupId: Int,
+        onResult: (success: Boolean, error: String?) -> Unit
+    ) {
+        viewModelScope.launch {
+            _deletedState.value = _deletedState.value.copy(isLoading = true, error = null)
+            try {
+                val token = session.getToken() ?: run { onResult(false, "No hay sesión activa"); return@launch }
+                val response = api.restoreSensor("Bearer $token", backupId)
+                if (response.isSuccessful) {
+                    // Quitar de la lista de respaldos
+                    _deletedState.value = _deletedState.value.copy(
+                        backups   = _deletedState.value.backups.filter { it.id != backupId },
+                        isLoading = false
+                    )
+                    // Refrescar lista principal de sensores
+                    loadSensors()
+                    onResult(true, null)
+                } else {
+                    val msg = parseError(response.errorBody()?.string(), response.code())
+                    _deletedState.value = _deletedState.value.copy(isLoading = false, error = msg)
+                    onResult(false, msg)
+                }
+            } catch (e: Exception) {
+                val msg = netError(e)
+                _deletedState.value = _deletedState.value.copy(isLoading = false, error = msg)
+                onResult(false, msg)
+            }
+        }
+    }
+
+    fun permanentlyDeleteBackup(backupId: Int, onResult: (success: Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val token = session.getToken() ?: run { onResult(false); return@launch }
+                val response = api.permanentlyDeleteBackup("Bearer $token", backupId)
+                if (response.isSuccessful) {
+                    _deletedState.value = _deletedState.value.copy(
+                        backups = _deletedState.value.backups.filter { it.id != backupId }
+                    )
+                    onResult(true)
+                } else {
+                    onResult(false)
+                }
+            } catch (e: Exception) {
+                onResult(false)
+            }
+        }
+    }
+
+    // ── Informe PDF ───────────────────────────────────────────────────────────
+
+    fun downloadReport(
+        sensorId: Int,
+        from: String,
+        to: String,
+        onSuccess: (java.io.File) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val token = session.getToken() ?: run { onError("No hay sesión activa"); return@launch }
+                val response = api.downloadReport("Bearer $token", sensorId, from, to)
+                if (response.isSuccessful) {
+                    val body = response.body() ?: run { onError("Respuesta vacía"); return@launch }
+                    val reportsDir = java.io.File(getApplication<android.app.Application>().cacheDir, "reports")
+                    reportsDir.mkdirs()
+                    val file = java.io.File(reportsDir, "informe_${sensorId}_${from}_${to}.pdf")
+                    body.byteStream().use { input ->
+                        file.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    onSuccess(file)
+                } else {
+                    onError("Error al generar el informe (${response.code()})")
+                }
+            } catch (e: Exception) {
+                onError(netError(e))
+            }
+        }
+    }
+
+    private fun parseError(body: String?, code: Int): String {
+        return try {
+            org.json.JSONObject(body ?: "").getString("message")
+        } catch (_: Exception) {
+            "Error ($code)"
+        }
+    }
+
+    private fun netError(e: Exception): String = when (e) {
+        is java.net.ConnectException       -> "No se pudo conectar al servidor. Verifica que el servidor esté encendido."
+        is java.net.SocketTimeoutException -> "El servidor tardó demasiado en responder. Intenta de nuevo."
+        is java.net.UnknownHostException   -> "Sin conexión a internet."
+        else                               -> "Error de red: ${e.message}"
     }
 }
