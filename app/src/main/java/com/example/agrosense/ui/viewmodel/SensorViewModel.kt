@@ -19,6 +19,7 @@ import com.example.agrosense.data.model.SensorReading
 import com.example.agrosense.data.model.ThresholdsRequest
 import com.example.agrosense.data.model.ToggleScheduleRequest
 import com.example.agrosense.data.storage.SessionManager
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -250,7 +251,7 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
     fun setPumpOverride(
         sensorId: Int,
         override: Boolean?,
-        onSuccess: () -> Unit,
+        onSuccess: (String) -> Unit,
         onError: (String) -> Unit
     ) {
         viewModelScope.launch {
@@ -264,7 +265,25 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
                             if (s.id == sensorId) s.copy(pump_manual_override = override) else s
                         }
                     )
-                    onSuccess()
+                    if (override == null) {
+                        onSuccess("Modo automático activado")
+                        return@launch
+                    }
+                    // Esperar confirmación del microcontrolador (max 10 s)
+                    val deadline = System.currentTimeMillis() + 10_000L
+                    while (System.currentTimeMillis() < deadline) {
+                        delay(2_000)
+                        try {
+                            val ackRes = api.getPumpAckStatus("Bearer $token", sensorId)
+                            if (ackRes.isSuccessful && ackRes.body()?.pending == false) {
+                                val msg = if (override) "Motobomba encendida con éxito"
+                                          else "Motobomba apagada con éxito"
+                                onSuccess(msg)
+                                return@launch
+                            }
+                        } catch (_: Exception) { }
+                    }
+                    onError("El microcontrolador no respondió. La instrucción fue guardada.")
                 } else {
                     val errBody = response.errorBody()?.string()
                     val msg = try {
@@ -444,7 +463,7 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
     fun setPumpOverrideShared(
         sensorId: Int,
         override: Boolean?,
-        onSuccess: () -> Unit,
+        onSuccess: (String) -> Unit,
         onError: (String) -> Unit
     ) {
         viewModelScope.launch {
@@ -457,7 +476,24 @@ class SensorViewModel(app: Application) : AndroidViewModel(app) {
                             if (s.sensor_id == sensorId) s.copy(pump_manual_override = override) else s
                         }
                     )
-                    onSuccess()
+                    if (override == null) {
+                        onSuccess("Modo automático activado")
+                        return@launch
+                    }
+                    val deadline = System.currentTimeMillis() + 10_000L
+                    while (System.currentTimeMillis() < deadline) {
+                        delay(2_000)
+                        try {
+                            val ackRes = api.getPumpAckStatus("Bearer $token", sensorId)
+                            if (ackRes.isSuccessful && ackRes.body()?.pending == false) {
+                                val msg = if (override) "Motobomba encendida con éxito"
+                                          else "Motobomba apagada con éxito"
+                                onSuccess(msg)
+                                return@launch
+                            }
+                        } catch (_: Exception) { }
+                    }
+                    onError("El microcontrolador no respondió. La instrucción fue guardada.")
                 } else {
                     val msg = parseError(response.errorBody()?.string(), response.code())
                     onError(msg)
