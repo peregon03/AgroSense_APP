@@ -22,8 +22,7 @@ import com.example.agrosense.data.model.ActionGroup
 import com.example.agrosense.data.model.ActionLog
 import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.ui.viewmodel.SensorViewModel
-import java.time.OffsetDateTime
-import java.time.format.DateTimeFormatter
+import java.text.SimpleDateFormat
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -170,8 +169,10 @@ private fun actionIcon(group: ActionGroup): Pair<ImageVector, androidx.compose.u
 
 private fun formatLogDate(isoDate: String): String {
     return try {
-        val odt = OffsetDateTime.parse(isoDate)
-        odt.format(DateTimeFormatter.ofPattern("dd MMM yyyy  HH:mm", Locale("es")))
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale("es"))
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val date = sdf.parse(isoDate.take(19)) ?: return isoDate.take(16).replace("T", "  ")
+        SimpleDateFormat("dd MMM yyyy  HH:mm", Locale("es")).format(date)
     } catch (_: Exception) {
         isoDate.take(16).replace("T", "  ")
     }

@@ -1,29 +1,24 @@
 /*
- * AgroSense - Arduino Nano ESP32 (ABX00092)
- * ==========================================
- * - SHT31 en A4/A5 (I2C): temperatura + humedad aire reales
+ * AgroSense - Arduino UNO R4 WiFi / Nano ESP32 (ABX00092)
+ * =========================================================
+ * - SHT31 remoto vía RS485 (Arduino Nano nodo sensor):
+ *     temperatura + humedad REALES
  * - CO2:    simulado (reemplazar con sensor MQ-135 u otro)
  * - Metano: simulado (reemplazar con sensor MQ-4 u otro)
  * - LED en D3: controlable desde app (simula motobomba)
+ * - RS485 recepción: D0(RX)/D1(TX) hardware serial — D2 = DE/RE
  * - BLE: configuracion WiFi + datos en vivo + control bomba + historico
  * - NVS: credenciales WiFi y API key persisten entre reinicios
  * - WiFi: envio a AWS cada 30s + consulta programacion de bomba cada 60s
  *
  * LIBRERIAS NECESARIAS (Tools > Manage Libraries):
- *   - Adafruit SHT31 Library  (Adafruit)
- *   - Adafruit Unified Sensor (Adafruit)
  *   - ArduinoJson
  *
- * CONEXION SHT31:
- *   VCC  → 3.3V   (¡NO 5V!)
- *   GND  → GND
- *   SDA  → A4
- *   SCL  → A5
- *   ADDR → GND    (dirección 0x44)
+ * NOTA: las librerías BLE, WiFi, Preferences y LittleFS vienen incluidas
+ *       con el paquete de soporte del ABX00092 (arduino-esp32 core).
  */
+
 #include "time.h"
-#include <Wire.h>
-#include <Adafruit_SHT31.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
@@ -35,10 +30,16 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 
-// Pines
-#define LED_PIN             3
+// ── Pines ────────────────────────────────────────────────────────────────────
+#define LED_PIN        3    // Simula bomba
+#define RS485_DE_PIN   2    // DE + RE del módulo RS485 (HIGH = TX, LOW = RX)
 
-// UUIDs BLE
+// En el ABX00092 (ESP32-S3):
+//   Serial  → USB-CDC  (Serial Monitor del PC — debug)
+//   Serial0 → D0/D1    (RS485 hardware — pines físicos)
+#define RS485_SERIAL   Serial0
+
+// ── UUIDs BLE ────────────────────────────────────────────────────────────────
 #define SERVICE_UUID        "0000A001-0000-1000-8000-00805F9B34FB"
 #define DEVICE_ID_UUID      "0000A002-0000-1000-8000-00805F9B34FB"
 #define READINGS_UUID       "0000A003-0000-1000-8000-00805F9B34FB"
@@ -48,19 +49,19 @@
 #define WIFI_CONFIG_UUID    "0000A007-0000-1000-8000-00805F9B34FB"
 #define WIFI_STATUS_UUID    "0000A008-0000-1000-8000-00805F9B34FB"
 
-// Intervalos
+// ── Intervalos ───────────────────────────────────────────────────────────────
 #define BLE_INTERVAL        2000
-#define WIFI_INTERVAL       30000
+#define WIFI_INTERVAL       600000
 #define SAVE_INTERVAL       60000
-#define PUMP_CHECK_INTERVAL 10000   // Consultar programacion cada 10 s
+#define PUMP_CHECK_INTERVAL 60000
+#define RS485_TIMEOUT_MS    5000    // Si no llegan datos en 5s, loguear advertencia
 
-// SPIFFS
-#define HISTORY_FILE        "/history.csv"
-#define MAX_RECORDS         500
+// ── SPIFFS ───────────────────────────────────────────────────────────────────
+#define HISTORY_FILE   "/history.csv"
+#define MAX_RECORDS    500
 
-// Variables globales
-Adafruit_SHT31 sht31;
-Preferences    prefs;
+// ── Variables globales ───────────────────────────────────────────────────────
+Preferences prefs;
 
 BLEServer*          pServer          = nullptr;
 BLECharacteristic*  pDeviceIdChar    = nullptr;
@@ -77,24 +78,95 @@ unsigned long lastBleTime        = 0;
 unsigned long lastWifiTime       = 0;
 unsigned long lastSaveTime       = 0;
 unsigned long lastPumpCheckTime  = 0;
-unsigned long pumpCheckInterval  = PUMP_CHECK_INTERVAL; // 5 s en manual, 60 s en auto
+unsigned long pumpCheckInterval  = PUMP_CHECK_INTERVAL;
+unsigned long lastRS485Rx        = 0;   // Último momento con dato válido recibido
 std::string   deviceId          = "";
 
-// Credenciales cargadas desde NVS
+// Credenciales NVS
 String wifiSsid     = "";
 String wifiPassword = "";
 String apiKey       = "";
 String backendUrl   = "http://3.15.133.197:3000/api/ingest";
 String pumpStatusUrl = "http://3.15.133.197:3000/api/ingest/pump-status";
-String pumpAckUrl    = "http://3.15.133.197:3000/api/ingest/pump-ack";
 
-// Lecturas actuales
-float currentTemperature = 0;
-float currentAirHumidity = 0;
-float currentCO2         = 400.0;   // ppm — reemplazar con lectura real del sensor
-float currentMethane     = 1.5;     // ppm — reemplazar con lectura real del sensor
+// Lecturas actuales — temperatura y humedad llegan del Nano vía RS485
+float currentTemperature = 0.0;
+float currentAirHumidity = 0.0;
+float currentCO2         = 400.0;   // ppm — reemplazar con sensor real MQ-135
+float currentMethane     = 1.5;     // ppm — reemplazar con sensor real MQ-4
 
-// ── Guardar / cargar config en NVS ─────────────────────────────────────────
+// Buffer RS485 para parseo de trama
+String rs485Buffer = "";
+
+// ── RS485: modo RX (por defecto) ─────────────────────────────────────────────
+void rs485ModeRX() {
+  digitalWrite(RS485_DE_PIN, LOW);
+}
+
+// ── RS485: parsear trama "$T:23.50,H:61.20\n" ────────────────────────────────
+bool parseRS485Frame(const String& frame) {
+  // Verificar cabecera
+  if (!frame.startsWith("$")) return false;
+
+  int tIdx = frame.indexOf("T:");
+  int hIdx = frame.indexOf("H:");
+  int cIdx = frame.indexOf(",", tIdx);
+
+  if (tIdx < 0 || hIdx < 0 || cIdx < 0) return false;
+
+  String tStr = frame.substring(tIdx + 2, cIdx);
+  String hStr = frame.substring(hIdx + 2);
+
+  float t = tStr.toFloat();
+  float h = hStr.toFloat();
+
+  // Validar rangos razonables del SHT31
+  if (t < -40.0 || t > 125.0) return false;
+  if (h < 0.0   || h > 100.0) return false;
+
+  currentTemperature = t;
+  currentAirHumidity = h;
+  lastRS485Rx = millis();
+
+  Serial.printf("[RS485 RX] T=%.2f C  H=%.2f %%\n", t, h);
+  return true;
+}
+
+// ── RS485: leer bytes disponibles del Serial hardware ────────────────────────
+void readRS485() {
+  while (RS485_SERIAL.available()) {
+    char c = (char)RS485_SERIAL.read();
+
+    if (c == '\n') {
+      rs485Buffer.trim();
+      if (rs485Buffer.length() > 0) {
+        if (!parseRS485Frame(rs485Buffer)) {
+          Serial.printf("[RS485] Trama inválida: '%s'\n", rs485Buffer.c_str());
+        }
+      }
+      rs485Buffer = "";
+    } else {
+      // Limitar buffer para evitar desbordamiento
+      if (rs485Buffer.length() < 64) {
+        rs485Buffer += c;
+      } else {
+        rs485Buffer = "";   // Trama corrupta — descartar
+      }
+    }
+  }
+}
+
+// ── Actualizar CO2 y metano simulados ─────────────────────────────────────────
+// TODO: reemplazar con lectura real de sensores MQ-135 / MQ-4
+void updateSimulatedSensors() {
+  float co2Delta     = (random(0, 100) - 50) * 0.5f;
+  currentCO2         = constrain(currentCO2 + co2Delta, 300.0, 2000.0);
+
+  float methaneDelta = (random(0, 100) - 50) * 0.02f;
+  currentMethane     = constrain(currentMethane + methaneDelta, 0.5, 20.0);
+}
+
+// ── Guardar / cargar config en NVS ──────────────────────────────────────────
 void saveConfig() {
   prefs.begin("agrosense", false);
   prefs.putString("ssid",     wifiSsid);
@@ -124,7 +196,7 @@ bool timeReady() {
   return true;
 }
 
-// ── Conectar WiFi ──────────────────────────────────────────────────────────
+// ── Conectar WiFi ────────────────────────────────────────────────────────────
 bool connectWiFi() {
   if (wifiSsid.length() == 0) {
     Serial.println("[WiFi] Sin credenciales configuradas");
@@ -146,7 +218,7 @@ bool connectWiFi() {
   return false;
 }
 
-// ── Notificar estado WiFi a la app ─────────────────────────────────────────
+// ── Notificar estado WiFi ────────────────────────────────────────────────────
 void notifyWifiStatus(const char* status) {
   if (pWifiStatusChar != nullptr) {
     pWifiStatusChar->setValue(status);
@@ -155,7 +227,7 @@ void notifyWifiStatus(const char* status) {
   }
 }
 
-// ── Callback: configuracion WiFi desde app ─────────────────────────────────
+// ── Callback: configuracion WiFi desde app ───────────────────────────────────
 class WifiConfigCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pChar) override {
     std::string val = pChar->getValue();
@@ -190,9 +262,7 @@ class WifiConfigCallbacks : public BLECharacteristicCallbacks {
     apiKey       = data.substring(sep2 + 1);
 
     Serial.printf("[WIFI_CONFIG] SSID: %s\n", wifiSsid.c_str());
-
     saveConfig();
-
     notifyWifiStatus("CONNECTING");
     WiFi.disconnect();
     delay(500);
@@ -208,7 +278,7 @@ class WifiConfigCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
-// ── Callback: control bomba/LED (manual desde BLE) ─────────────────────────
+// ── Callback: control bomba/LED ──────────────────────────────────────────────
 class PumpCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pChar) override {
     std::string val = pChar->getValue();
@@ -229,7 +299,7 @@ class PumpCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
-// ── Callback: peticion de historico ────────────────────────────────────────
+// ── Callback: peticion de historico ─────────────────────────────────────────
 class HistoryRequestCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pChar) override {
     std::string val = pChar->getValue();
@@ -245,27 +315,7 @@ class HistoryRequestCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
-// ── Leer sensores ──────────────────────────────────────────────────────────
-void readSensors() {
-  float t = sht31.readTemperature();
-  float h = sht31.readHumidity();
-
-  if (!isnan(t) && t >= -40.0 && t <= 125.0) currentTemperature = t;
-  else Serial.println("[SHT31] Error leyendo temperatura");
-
-  if (!isnan(h) && h >= 0.0 && h <= 100.0) currentAirHumidity = h;
-  else Serial.println("[SHT31] Error leyendo humedad");
-
-  // TODO: reemplazar con lectura real del sensor de CO2 (ej. MQ-135)
-  float co2Delta = (random(0, 100) - 50) * 0.5f;
-  currentCO2 = constrain(currentCO2 + co2Delta, 300.0, 2000.0);
-
-  // TODO: reemplazar con lectura real del sensor de metano (ej. MQ-4)
-  float methaneDelta = (random(0, 100) - 50) * 0.02f;
-  currentMethane = constrain(currentMethane + methaneDelta, 0.5, 20.0);
-}
-
-// ── Construir JSON lectura actual ──────────────────────────────────────────
+// ── Construir JSON lectura actual ────────────────────────────────────────────
 std::string buildReadingJson() {
   char buf[256];
   snprintf(buf, sizeof(buf),
@@ -274,7 +324,7 @@ std::string buildReadingJson() {
   return std::string(buf);
 }
 
-// ── Guardar lectura en SPIFFS ──────────────────────────────────────────────
+// ── Guardar lectura en SPIFFS ────────────────────────────────────────────────
 void saveReadingToSPIFFS() {
   String existing = "";
   int count = 0;
@@ -313,7 +363,7 @@ void saveReadingToSPIFFS() {
   }
 }
 
-// ── Enviar historico por BLE ───────────────────────────────────────────────
+// ── Enviar historico por BLE ─────────────────────────────────────────────────
 void sendHistoryBLE() {
   if (!SPIFFS.exists(HISTORY_FILE)) {
     pHistoryDataChar->setValue("EMPTY");
@@ -367,7 +417,7 @@ void sendHistoryBLE() {
   Serial.printf("[HISTORY] Enviados %d registros\n", sent);
 }
 
-// ── Enviar lecturas al servidor ────────────────────────────────────────────
+// ── Enviar lecturas al servidor ──────────────────────────────────────────────
 void sendToAWS() {
   if (apiKey.length() == 0) {
     Serial.println("[WiFi] Sin API key - configura el sensor desde la app");
@@ -398,30 +448,9 @@ void sendToAWS() {
   http.end();
 }
 
-// ── Confirmar al servidor que el ESP32 recibió la instrucción ─────────────
-void sendPumpAck() {
-  if (apiKey.length() == 0 || WiFi.status() != WL_CONNECTED) return;
-
-  HTTPClient http;
-  http.begin(pumpAckUrl);
-  http.addHeader("Content-Type", "application/json");
-
-  char body[128];
-  snprintf(body, sizeof(body),
-    "{\"device_id\":\"%s\",\"api_key\":\"%s\"}",
-    deviceId.c_str(), apiKey.c_str());
-
-  int httpCode = http.POST(body);
-  Serial.printf("[PUMP_ACK] HTTP %d\n", httpCode);
-  http.end();
-}
-
-// ── Consultar programacion de bomba al servidor ────────────────────────────
+// ── Consultar programacion de bomba ──────────────────────────────────────────
 void checkPumpSchedule() {
-  if (apiKey.length() == 0) {
-    Serial.println("[PUMP_CHECK] Sin API key — omitiendo consulta");
-    return;
-  }
+  if (apiKey.length() == 0) return;
   if (WiFi.status() != WL_CONNECTED) {
     if (!connectWiFi()) return;
   }
@@ -449,10 +478,9 @@ void checkPumpSchedule() {
     }
     bool scheduledOn = doc["pump_on"] | false;
     const char* mode = doc["mode"] | "auto";
-    bool isManual = strcmp(mode, "manual") == 0;
+    bool isManual    = strcmp(mode, "manual") == 0;
 
-    // Intervalo adaptativo: 2 s en modo manual para respuesta rapida, 60 s en auto
-    pumpCheckInterval = isManual ? 2000 : PUMP_CHECK_INTERVAL;
+    pumpCheckInterval = isManual ? 5000 : PUMP_CHECK_INTERVAL;
 
     Serial.printf("[PUMP_CHECK] pump_on=%s  modo=%s  intervalo=%lus\n",
       scheduledOn ? "true" : "false", mode, pumpCheckInterval / 1000);
@@ -461,16 +489,11 @@ void checkPumpSchedule() {
       pumpState = scheduledOn;
       digitalWrite(LED_PIN, pumpState ? HIGH : LOW);
       Serial.printf("[BOMBA] Estado aplicado: %s\n", pumpState ? "ENCENDIDA" : "APAGADA");
-      if (isManual) sendPumpAck();  // Confirmar recepcion al servidor solo en modo manual
-    } else {
-      Serial.printf("[PUMP_CHECK] Sin cambio — bomba ya esta %s\n", pumpState ? "ON" : "OFF");
     }
-  } else {
-    Serial.printf("[PUMP_CHECK] Error HTTP: %d  Respuesta: %s\n", httpCode, payload.c_str());
   }
 }
 
-// ── Callback BLE: conexion / desconexion ───────────────────────────────────
+// ── Callback BLE: conexion / desconexion ─────────────────────────────────────
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) override {
     bleConnected = true;
@@ -484,28 +507,22 @@ class ServerCallbacks : public BLEServerCallbacks {
   }
 };
 
-// ── Setup ──────────────────────────────────────────────────────────────────
+// ── Setup ─────────────────────────────────────────────────────────────────────
 void setup() {
-  Serial.begin(115200);
-  delay(300);
+  // Serial  → USB-CDC del ESP32-S3 (Serial Monitor del PC — debug)
+  // Serial0 → pines D0/D1 físicos  (bus RS485)
+  Serial.begin(115200);         // Debug por USB — velocidad libre
+  delay(100);
+  Serial.println("[R4] Iniciando AgroSense maestro...");
+
+  // RS485 en Serial0 (D0=RX, D1=TX) al mismo baud que el Nano
+  RS485_SERIAL.begin(9600);
+  pinMode(RS485_DE_PIN, OUTPUT);
+  rs485ModeRX();
+  Serial.println("[RS485] Serial0 iniciado a 9600 baud (D0=RX, D1=TX, D2=DE)");
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
-
-  // D2 libre (antes era DHT11) — fijar LOW para evitar fluctuaciones
-  pinMode(2, OUTPUT);
-  digitalWrite(2, LOW);
-
-  // I2C con pines explícitos para el ESP32-S3 (ABX00092)
-  Wire.begin(A4, A5);   // SDA=A4, SCL=A5
-  delay(100);           // Esperar que el bus I2C estabilice
-
-  if (!sht31.begin(0x44)) {
-    Serial.println("[SHT31] ERROR: sensor no encontrado en 0x44 — verifica conexion y VCC=3.3V");
-  } else {
-    Serial.println("[SHT31] Sensor OK");
-    delay(1000);        // SHT31 necesita ~1s tras encendido para primera lectura estable
-  }
 
   if (!SPIFFS.begin(true)) {
     Serial.println("[SPIFFS] Error al montar");
@@ -515,23 +532,22 @@ void setup() {
 
   bool hasConfig = loadConfig();
 
-  delay(500);    // SHT31 estabiliza en ~0.5s
-  readSensors();
+  // Esperar primeros datos del Nano antes de arrancar BLE
+  // (hasta 3 s; si no llegan, arranca con valores 0 de todas formas)
+  unsigned long waitStart = millis();
+  while (millis() - waitStart < 3000) {
+    readRS485();
+    delay(10);
+  }
 
   if (hasConfig && connectWiFi()) {
     configTime(-5 * 3600, 0, "pool.ntp.org");
-    Serial.println("[TIME] Sincronizando NTP...");
     int retries = 0;
-    while (!timeReady() && retries < 10) {
-      delay(1000);
-      retries++;
-    }
-    if (timeReady()) Serial.println("[TIME] Hora sincronizada OK");
+    while (!timeReady() && retries < 10) { delay(1000); retries++; }
   }
 
   BLEDevice::init("AgroSense");
   deviceId = BLEDevice::getAddress().toString();
-  Serial.printf("[BLE] Device ID (MAC): %s\n", deviceId.c_str());
 
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
@@ -577,19 +593,28 @@ void setup() {
   pAdvertising->setMinPreferred(0x06);
   pAdvertising->setMinPreferred(0x12);
   BLEDevice::startAdvertising();
-
-  Serial.println("[BLE] Activo - esperando conexion...");
-  Serial.println("=== AgroSense listo ===");
 }
 
-// ── Loop ───────────────────────────────────────────────────────────────────
+// ── Loop ─────────────────────────────────────────────────────────────────────
 void loop() {
   unsigned long now = millis();
 
-  // Leer sensores y notificar por BLE cada 2 s
+  // Leer RS485 en cada iteración del loop (sin bloquear)
+  readRS485();
+
+  // Advertir si el Nano lleva más de 5 s sin enviar datos
+  if (lastRS485Rx > 0 && (now - lastRS485Rx) > RS485_TIMEOUT_MS) {
+    // Silencioso en producción; si quieres debug descomenta:
+    // Serial.println("[RS485] ADVERTENCIA: sin datos del Nano en >5s");
+    lastRS485Rx = now;   // Reinicia para no repetir cada ciclo
+  }
+
+  // Actualizar CO2 y metano simulados
+  updateSimulatedSensors();
+
+  // Notificar por BLE cada 2 s
   if (now - lastBleTime >= BLE_INTERVAL) {
     lastBleTime = now;
-    readSensors();
 
     if (bleConnected) {
       std::string payload = buildReadingJson();
@@ -601,7 +626,6 @@ void loop() {
         pReadingsChar->notify();
         delay(30);
       }
-      Serial.printf("[BLE] -> %s\n", payload.c_str());
     }
   }
 
@@ -617,7 +641,7 @@ void loop() {
     sendToAWS();
   }
 
-  // Consultar programacion/override de bomba (5 s en manual, 60 s en auto)
+  // Consultar programacion bomba
   if (now - lastPumpCheckTime >= pumpCheckInterval) {
     lastPumpCheckTime = now;
     checkPumpSchedule();

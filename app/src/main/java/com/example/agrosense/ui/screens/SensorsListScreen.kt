@@ -1,5 +1,10 @@
 package com.example.agrosense.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
@@ -16,18 +22,23 @@ import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SignalWifi4Bar
 import androidx.compose.material.icons.filled.SignalWifiOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.ui.viewmodel.BleViewModel
 import com.example.agrosense.ui.viewmodel.SensorViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+internal data class PumpToast(val message: String, val isSuccess: Boolean)
 
 private enum class RemoteAction { ON, OFF, AUTO }
 
@@ -55,9 +66,31 @@ fun SensorsListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    var sensorToDelete by remember { mutableStateOf<Sensor?>(null) }
+    var sensorToDelete  by remember { mutableStateOf<Sensor?>(null) }
+    var awaitingPumpAck by remember { mutableStateOf(false) }
+    var pumpToast       by remember { mutableStateOf<PumpToast?>(null) }
+
+    LaunchedEffect(pumpToast) {
+        if (pumpToast != null) { delay(3500); pumpToast = null }
+    }
 
     LaunchedEffect(Unit) { vm.loadSensors() }
+
+    // Diálogo esperando ACK del microcontrolador
+    if (awaitingPumpAck) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Enviando instrucción", fontWeight = FontWeight.Bold) },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.5.dp)
+                    Spacer(Modifier.width(14.dp))
+                    Text("Esperando respuesta del Dispositivo…")
+                }
+            },
+            confirmButton = {}
+        )
+    }
 
     // Diálogo confirmar eliminación
     sensorToDelete?.let { sensor ->
@@ -103,10 +136,11 @@ fun SensorsListScreen(
         }
     ) { padding ->
 
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .padding(16.dp)
         ) {
 
@@ -170,22 +204,17 @@ fun SensorsListScreen(
                             onGenerateReport = { onGenerateReport(sensor) },
                             onDelete         = { sensorToDelete = sensor },
                             onRemoteControl  = { override ->
+                                if (override != null) awaitingPumpAck = true
                                 vm.setPumpOverride(
                                     sensorId  = sensor.id,
                                     override  = override,
-                                    onSuccess = {
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar(
-                                                when (override) {
-                                                    true  -> "Riego encendido manualmente"
-                                                    false -> "Riego apagado"
-                                                    null  -> "Modo automático activado"
-                                                }
-                                            )
-                                        }
+                                    onSuccess = { msg ->
+                                        awaitingPumpAck = false
+                                        pumpToast = PumpToast(msg, isSuccess = true)
                                     },
                                     onError = { msg ->
-                                        scope.launch { snackbarHostState.showSnackbar("Error: $msg") }
+                                        awaitingPumpAck = false
+                                        pumpToast = PumpToast(msg, isSuccess = false)
                                     }
                                 )
                             }
@@ -194,7 +223,50 @@ fun SensorsListScreen(
 
                 }
             }
+        } // Column
+
+        // ── Toast resultado bomba ─────────────────────────────────────────────
+        AnimatedVisibility(
+            visible = pumpToast != null,
+            enter   = slideInVertically { it } + fadeIn(),
+            exit    = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 24.dp, vertical = 20.dp)
+        ) {
+            pumpToast?.let { toast ->
+                Card(
+                    shape     = RoundedCornerShape(20.dp),
+                    elevation = CardDefaults.cardElevation(12.dp),
+                    colors    = CardDefaults.cardColors(
+                        containerColor = if (toast.isSuccess) Color(0xFF1B5E20)
+                                         else MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Row(
+                        modifier          = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector      = if (toast.isSuccess) Icons.Default.CheckCircle
+                                               else Icons.Default.Warning,
+                            contentDescription = null,
+                            tint             = Color.White,
+                            modifier         = Modifier.size(26.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text       = toast.message,
+                            color      = Color.White,
+                            style      = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
         }
+
+        } // Box
     }
 }
 

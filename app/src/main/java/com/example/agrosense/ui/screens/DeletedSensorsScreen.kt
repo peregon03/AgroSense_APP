@@ -18,8 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.agrosense.data.model.DeletedSensorBackup
 import com.example.agrosense.ui.viewmodel.SensorViewModel
-import java.time.OffsetDateTime
-import java.time.format.DateTimeFormatter
+import java.text.SimpleDateFormat
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -294,8 +293,10 @@ private fun DeletedSensorCard(
 
 private fun formatDate(isoDate: String): String {
     return try {
-        val odt = OffsetDateTime.parse(isoDate)
-        odt.format(DateTimeFormatter.ofPattern("dd MMM yyyy", Locale("es")))
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale("es"))
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val date = sdf.parse(isoDate.take(19)) ?: return isoDate.take(10)
+        SimpleDateFormat("dd MMM yyyy", Locale("es")).format(date)
     } catch (_: Exception) {
         isoDate.take(10)
     }

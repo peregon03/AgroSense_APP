@@ -1,5 +1,10 @@
 package com.example.agrosense.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -7,17 +12,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.agrosense.data.model.Sensor
 import com.example.agrosense.data.model.SharedSensorEntry
 import com.example.agrosense.ui.viewmodel.SensorViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private enum class SharedRemoteAction { ON, OFF, AUTO }
@@ -34,7 +43,29 @@ fun SharedSensorsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    var awaitingPumpAck by remember { mutableStateOf(false) }
+    var pumpToast       by remember { mutableStateOf<PumpToast?>(null) }
+
+    LaunchedEffect(pumpToast) {
+        if (pumpToast != null) { delay(3500); pumpToast = null }
+    }
+
     LaunchedEffect(Unit) { sensorViewModel.loadSharedWithMe() }
+
+    if (awaitingPumpAck) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Enviando instrucción", fontWeight = FontWeight.Bold) },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.5.dp)
+                    Spacer(Modifier.width(14.dp))
+                    Text("Esperando respuesta del Dispositivo…")
+                }
+            },
+            confirmButton = {}
+        )
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -54,10 +85,10 @@ fun SharedSensorsScreen(
             )
         }
     ) { padding ->
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
         ) {
             if (sharedState.isLoading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -111,22 +142,17 @@ fun SharedSensorsScreen(
                             onViewCharts   = { if (entry.can_view_graphs) onViewCharts(entry.toSensor()) },
                             onSchedulePump = { if (entry.can_schedule) onSchedulePump(entry.toSensor()) },
                             onRemoteControl = { override ->
+                                if (override != null) awaitingPumpAck = true
                                 sensorViewModel.setPumpOverrideShared(
                                     sensorId  = entry.sensor_id,
                                     override  = override,
-                                    onSuccess = {
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar(
-                                                when (override) {
-                                                    true  -> "Riego encendido"
-                                                    false -> "Riego apagado"
-                                                    null  -> "Modo automático"
-                                                }
-                                            )
-                                        }
+                                    onSuccess = { msg ->
+                                        awaitingPumpAck = false
+                                        pumpToast = PumpToast(msg, isSuccess = true)
                                     },
                                     onError = { msg ->
-                                        scope.launch { snackbarHostState.showSnackbar("Error: $msg") }
+                                        awaitingPumpAck = false
+                                        pumpToast = PumpToast(msg, isSuccess = false)
                                     }
                                 )
                             }
@@ -134,7 +160,49 @@ fun SharedSensorsScreen(
                     }
                 }
             }
+        } // Column
+
+        AnimatedVisibility(
+            visible  = pumpToast != null,
+            enter    = slideInVertically { it } + fadeIn(),
+            exit     = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 24.dp, vertical = 20.dp)
+        ) {
+            pumpToast?.let { toast ->
+                Card(
+                    shape     = RoundedCornerShape(20.dp),
+                    elevation = CardDefaults.cardElevation(12.dp),
+                    colors    = CardDefaults.cardColors(
+                        containerColor = if (toast.isSuccess) Color(0xFF1B5E20)
+                                         else MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Row(
+                        modifier          = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector        = if (toast.isSuccess) Icons.Default.CheckCircle
+                                                 else Icons.Default.Warning,
+                            contentDescription = null,
+                            tint               = Color.White,
+                            modifier           = Modifier.size(26.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text       = toast.message,
+                            color      = Color.White,
+                            style      = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
         }
+
+        } // Box
     }
 }
 

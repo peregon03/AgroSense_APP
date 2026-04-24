@@ -11,6 +11,7 @@ import com.example.agrosense.data.model.SharedSensorsResponse
 import com.example.agrosense.data.model.RestoreSensorResponse
 import com.example.agrosense.data.model.IrrigationScheduleResponse
 import com.example.agrosense.data.model.IrrigationSchedulesResponse
+import com.example.agrosense.data.model.PumpAckStatusResponse
 import com.example.agrosense.data.model.PumpOverrideRequest
 import com.example.agrosense.data.model.PumpOverrideResponse
 import com.example.agrosense.data.model.Sensor
@@ -126,6 +127,12 @@ interface SensorApiService {
         @Path("id") sensorId: Int,
         @Body body: PumpOverrideRequest
     ): Response<PumpOverrideResponse>
+
+    @GET("sensors/{id}/pump-ack-status")
+    suspend fun getPumpAckStatus(
+        @Header("Authorization") token: String,
+        @Path("id") sensorId: Int
+    ): Response<PumpAckStatusResponse>
 
     // ── Compartir sensor ───────────────────────────────────────────────────
 

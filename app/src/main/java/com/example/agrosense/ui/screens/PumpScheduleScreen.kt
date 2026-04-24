@@ -206,10 +206,11 @@ private fun ScheduleCard(
     onEdit:   (IrrigationSchedule) -> Unit,
     onDelete: (IrrigationSchedule) -> Unit
 ) {
-    val dur = schedule.duration_minutes
+    val dur = schedule.duration_seconds
     val durationText = when {
-        dur >= 60 -> "%dh %02dmin".format(dur / 60, dur % 60)
-        else      -> "$dur min"
+        dur < 60       -> "${dur} s"
+        dur % 60 == 0  -> "${dur / 60} min"
+        else           -> "${dur / 60} min ${dur % 60} s"
     }
 
     Card(
@@ -298,7 +299,7 @@ private fun ScheduleDialog(
     var minute      by remember {
         mutableStateOf(initial?.start_time?.split(":")?.getOrNull(1)?.padStart(2, '0') ?: "00")
     }
-    var durationMin by remember { mutableStateOf(initial?.duration_minutes ?: 30) }
+    var durationSec by remember { mutableStateOf(initial?.duration_seconds ?: 300) }
     var enabled     by remember { mutableStateOf(initial?.enabled ?: true) }
     var hourError   by remember { mutableStateOf(false) }
     var minuteError by remember { mutableStateOf(false) }
@@ -376,26 +377,32 @@ private fun ScheduleDialog(
                     Text("Duración", fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(4.dp))
+                    val durText = when {
+                        durationSec < 60      -> "${durationSec} s"
+                        durationSec % 60 == 0 -> "${durationSec / 60} min"
+                        else                  -> "${durationSec / 60} min ${durationSec % 60} s"
+                    }
                     Text(
-                        "%dh %02dmin".format(durationMin / 60, durationMin % 60),
+                        durText,
                         fontSize   = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color      = MaterialTheme.colorScheme.primary
                     )
+                    // Rango: 10 s – 3600 s, pasos de 10 s → steps = 358
                     Slider(
-                        value         = durationMin.toFloat(),
-                        onValueChange = { durationMin = it.toInt() },
-                        valueRange    = 1f..240f,
-                        steps         = 238,
+                        value         = durationSec.toFloat(),
+                        onValueChange = { durationSec = (it.toInt() / 10) * 10 },
+                        valueRange    = 10f..3600f,
+                        steps         = 358,
                         modifier      = Modifier.fillMaxWidth()
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("1 min", style = MaterialTheme.typography.labelSmall,
+                        Text("10 s", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("4 h", style = MaterialTheme.typography.labelSmall,
+                        Text("1 h", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -429,7 +436,7 @@ private fun ScheduleDialog(
                                 IrrigationScheduleRequest(
                                     label            = label.trim().ifBlank { null },
                                     start_time       = "%02d:%02d".format(h, m),
-                                    duration_minutes = durationMin,
+                                    duration_seconds = durationSec,
                                     enabled          = enabled
                                 )
                             )
