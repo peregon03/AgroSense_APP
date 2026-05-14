@@ -16,6 +16,14 @@ data class SensorReading(
     val airHumidity: Float? = null,
     val co2: Float? = null,
     val methane: Float? = null,
+    // Nodo 03 — sensor de suelo
+    val soilTemp:    Float? = null,
+    val soilHum:     Float? = null,
+    val ec:          Float? = null,
+    val ph:          Float? = null,
+    val nitrogen:    Float? = null,
+    val phosphorus:  Float? = null,
+    val potassium:   Float? = null,
     val rawJson: String? = null
 )
 
@@ -480,15 +488,26 @@ class BleManager(private val context: Context) {
 
     private fun parseReading(json: String): SensorReading {
         return try {
-            fun extractFloat(key: String): Float? {
-                val regex = Regex("\"$key\"\\s*:\\s*([\\d.]+)")
-                return regex.find(json)?.groupValues?.get(1)?.toFloatOrNull()
+            fun extractFloat(vararg keys: String): Float? {
+                for (key in keys) {
+                    val regex = Regex("\"$key\"\\s*:\\s*([\\d.]+)")
+                    val v = regex.find(json)?.groupValues?.get(1)?.toFloatOrNull()
+                    if (v != null) return v
+                }
+                return null
             }
             SensorReading(
-                temperature = extractFloat("temperature"),
-                airHumidity = extractFloat("air_humidity"),
+                temperature = extractFloat("temperature", "t"),
+                airHumidity = extractFloat("air_humidity", "a"),
                 co2         = extractFloat("co2"),
-                methane     = extractFloat("methane"),
+                methane     = extractFloat("methane", "ch4"),
+                soilTemp    = extractFloat("st"),
+                soilHum     = extractFloat("sh"),
+                ec          = extractFloat("ec"),
+                ph          = extractFloat("ph"),
+                nitrogen    = extractFloat("n"),
+                phosphorus  = extractFloat("p"),
+                potassium   = extractFloat("k"),
                 rawJson     = json
             )
         } catch (e: Exception) {

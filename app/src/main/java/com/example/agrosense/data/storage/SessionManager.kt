@@ -12,8 +12,9 @@ private val Context.dataStore by preferencesDataStore("session")
 
 class SessionManager(private val context: Context) {
 
-    private val KEY_TOKEN  = stringPreferencesKey("token")
-    private val KEY_UNREAD = intPreferencesKey("unread_count")
+    private val KEY_TOKEN    = stringPreferencesKey("token")
+    private val KEY_UNREAD   = intPreferencesKey("unread_count")
+    private val KEY_APP_MODE = stringPreferencesKey("app_mode")  // "cloud" | "local"
 
     suspend fun saveToken(token: String) {
         context.dataStore.edit { prefs ->
@@ -35,10 +36,20 @@ class SessionManager(private val context: Context) {
         return context.dataStore.data.map { it[KEY_UNREAD] ?: 0 }.first()
     }
 
+    suspend fun saveAppMode(mode: String) {
+        context.dataStore.edit { prefs -> prefs[KEY_APP_MODE] = mode }
+    }
+
+    /** Retorna "cloud" por defecto si no se ha configurado aún. */
+    suspend fun getAppMode(): String {
+        return context.dataStore.data.map { it[KEY_APP_MODE] ?: "cloud" }.first()
+    }
+
     suspend fun clear() {
         context.dataStore.edit { prefs ->
             prefs.remove(KEY_TOKEN)
             prefs.remove(KEY_UNREAD)
+            // KEY_APP_MODE se mantiene para no perder la preferencia de modo al logout nube
         }
     }
 }

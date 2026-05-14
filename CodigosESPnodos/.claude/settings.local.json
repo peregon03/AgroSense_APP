@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd /c \"mkdir \\\\\"D:\\\\Michael\\\\Electroinova\\\\Desarrollos app\\\\AgroSense\\\\CodigosESPnodos\\\\CodigosNodosLoRa\\\\NodoMaestro_LoRa\\\\\" && mkdir \\\\\"D:\\\\Michael\\\\Electroinova\\\\Desarrollos app\\\\AgroSense\\\\CodigosESPnodos\\\\CodigosNodosLoRa\\\\NodoTemHum_LoRa\\\\\" && mkdir \\\\\"D:\\\\Michael\\\\Electroinova\\\\Desarrollos app\\\\AgroSense\\\\CodigosESPnodos\\\\CodigosNodosLoRa\\\\NodoMethano_LoRa\\\\\" && echo OK\")"
+    ]
+  }
+}

@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.BluetoothConnected
 import androidx.compose.material.icons.outlined.Eco
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -57,7 +58,8 @@ fun LoginScreen(
     vm: AuthViewModel,
     onGoRegister: () -> Unit,
     onForgotPassword: () -> Unit = {},
-    onNeedsVerification: (email: String) -> Unit = {}
+    onNeedsVerification: (email: String) -> Unit = {},
+    onLocalMode: () -> Unit = {}
 ) {
     // ── Estado — idéntico al original ────────────────────────────────────────
     var email       by remember { mutableStateOf("") }
@@ -401,6 +403,30 @@ fun LoginScreen(
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = AgroSurfaceContainer)
+            Spacer(Modifier.height(12.dp))
+
+            // ── Modo local (sin internet) ─────────────────────────────────
+            OutlinedButton(
+                onClick = onLocalMode,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = AgroPrimary)
+            ) {
+                Icon(
+                    Icons.Outlined.BluetoothConnected,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Continuar sin conexión (Modo Local)",
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
     }

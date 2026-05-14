@@ -1,31 +1,40 @@
 /*
- * AgroSense — Nodo 02 (Arduino Nano) — MICS-6814
- * ================================================
+ * AgroSense — Nodo 02 (Arduino Nano) — MICS-6814 — LoRa
+ * =======================================================
  * Rango: 0 – 10 000 ppm CH4  |  Protocolo PUSH cada 2 s
  * Formato trama: "$N:02,M:1234.56\n"
  *
- * Pines:
- *   MICS6814 → A0 (CO), A2 (NH3), 5V, GND
- *   MAX485   → D4 (RO/RX), D5 (DI/TX), D6 (DE+RE), 5V, GND
+ * LoRa Ra-02 (SX1278 433 MHz) — conexión Arduino Nano:
+ *   D11 (MOSI) → MOSI      D10 (SS)  → NSS/CS
+ *   D12 (MISO) → MISO      D9        → RST
+ *   D13 (SCK)  → SCK       D2        → DIO0 (IRQ)
+ *   3.3V       → VCC  ←  IMPORTANTE: Ra-02 es 3.3V, NO 5V
+ *   GND        → GND
+ *
+ * MICS-6814:
+ *   A0 (canal CO), A2 (canal NH3 → usado para CH4), 5V, GND
+ *
+ * Librería requerida: "LoRa" by Sandeep Mistry (Arduino Library Manager)
+ *
+ * Configuración LoRa: 433 MHz | SF7 | BW 125 kHz | CR 4/5 | SyncWord 0xA5
+ * (debe coincidir exactamente con el maestro)
  *
  * CALIBRACIÓN (una sola vez en aire limpio):
- *  1. CALIBRATION_MODE true → quemar
+ *  1. CALIBRATION_MODE true → cargar al Nano
  *  2. Serial Monitor 9600 → esperar resultado R0
  *  3. Pegar ese valor en R0_OHM aquí abajo
- *  4. CALIBRATION_MODE false → re-quemar
+ *  4. CALIBRATION_MODE false → re-cargar
  *
- * NOTA AVR: Serial.printf() y snprintf(%f) NO funcionan en Nano.
+ * NOTA AVR: Serial.printf() con %f NO existe en Nano.
  *           Todo float se convierte con dtostrf() antes de imprimir.
  *
- * FIXES v4:
- *   - rsToPpm(): eliminado corte artificial "if (ratio >= 1.0f) return 0"
- *     que enviaba CH4=0.0 siempre que el sensor estaba en aire limpio o
- *     calentándose (emaRs > R0 → ratio > 1 → curva da valores bajos pero
- *     reales, no cero). La curva de potencia con B negativo ya maneja
- *     todo el rango correctamente.
+ * FIXES v4 (heredados — sin cambios en lógica de sensor):
+ *   - rsToPpm(): eliminado "if (ratio >= 1.0f) return 0" que enviaba CH4=0
+ *     siempre que el sensor estaba en aire limpio o calentándose.
  */
 
-#include <SoftwareSerial.h>
+#include <SPI.h>
+#include <LoRa.h>
 #include <math.h>
 
 // ── Macro de debug compatible con AVR ─────────────────────────────────────
@@ -38,11 +47,11 @@
 //  CONFIGURACIÓN — EDITAR AQUÍ
 // ═══════════════════════════════════════════════════════════════════════════
 
-#define CALIBRATION_MODE    false   // true = medir R0, false = producción
+#define CALIBRATION_MODE    false  // true = medir R0, false = producción
 
 // R0: resistencia del sensor en aire limpio.
 // REEMPLAZAR con el valor que arroje el modo calibración.
-#define R0_OHM              439.0f
+#define R0_OHM  198776.0f
 
 // Resistencia de carga del módulo (verificar esquemático — típico 10kΩ)
 #define RL_OHM              10000.0f
@@ -51,7 +60,6 @@
 
 // Curva de potencia datasheet MICS-6814, canal NH3, para CH4:
 //   ppm = A * (Rs/R0)^B
-//   Rs/R0=1.0 → ~1000 ppm  |  Rs/R0=0.3 → ~10000 ppm
 #define CURVE_A             1000.0f
 #define CURVE_B             -1.96f
 
@@ -60,14 +68,26 @@
 
 // Filtrado
 #define SAMPLES             15        // mediana (mantener impar)
-#define EMA_ALPHA           0.10f    // suavizado: 0.1=lento 0.3=rápido
-#define BASELINE_ALPHA      0.001f   // deriva térmica
-#define NOISE_FLOOR         30.0f    // cuentas ADC mín para reportar gas
+#define EMA_ALPHA           0.10f
+#define BASELINE_ALPHA      0.001f
+#define NOISE_FLOOR         30.0f     // cuentas ADC mín para reportar gas
 
-// RS485
-#define RS485_RX_PIN        4
-#define RS485_TX_PIN        5
-#define RS485_DE_PIN        6
+// Pines MICS-6814
+#define PIN_NH3             A2
+#define PIN_CO              A0
+
+// ── Pines LoRa Ra-02 (defaults de la librería para Arduino Nano) ───────────
+#define LORA_NSS   10   // SS  — D10
+#define LORA_RST    9   // RST — D9
+#define LORA_DIO0   2   // IRQ — D2
+
+#define LORA_FREQ   433E6
+#define LORA_SF     7
+#define LORA_BW     125E3
+#define LORA_CR     5
+#define LORA_SYNC   0xA5   // sync word privado AgroSense — igual al maestro
+
+// ── Intervalos ────────────────────────────────────────────────────────────
 #define SEND_INTERVAL       2000UL
 
 // Anti-colisión: Nodo01=0–499ms | Nodo02=500–999ms
@@ -77,14 +97,9 @@
 // Calentamiento: 3 min (datasheet). Poner 0 solo para pruebas de banco.
 #define WARMUP_MS           180000UL
 
-#define PIN_NH3             A2
-#define PIN_CO              A0
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  VARIABLES GLOBALES
 // ═══════════════════════════════════════════════════════════════════════════
-
-SoftwareSerial rs485Serial(RS485_RX_PIN, RS485_TX_PIN);
 
 float emaRs      = -1.0f;
 float baselineRs = -1.0f;
@@ -94,16 +109,13 @@ unsigned long lastSendTime = 0;
 //  FUNCIONES AUXILIARES
 // ═══════════════════════════════════════════════════════════════════════════
 
-void rs485Transmit(const char* msg) {
-  digitalWrite(RS485_DE_PIN, HIGH);
-  delayMicroseconds(100);
-  rs485Serial.print(msg);
-  rs485Serial.flush();
-  delayMicroseconds(100);
-  digitalWrite(RS485_DE_PIN, LOW);
+void loraTransmit(const char* msg) {
+  LoRa.beginPacket();
+  LoRa.print(msg);
+  LoRa.endPacket();  // bloqueante ~50-70 ms a SF7/BW125 — seguro a 2 s de intervalo
 }
 
-// floatToStr — redondeo correcto en AVR (evita "0.00" falso)
+// floatToStr — redondeo correcto en AVR (evita "0.00" falso) — FIX v2
 void floatToStr(char* buf, float val) {
   if (isnan(val) || val < 0.0f) { strcpy(buf, "0.00"); return; }
   long entero = (long)val;
@@ -129,11 +141,8 @@ float adcToRs(int adc) {
 }
 
 // Rs → ppm usando curva logarítmica del datasheet
-// FIX v4: eliminado "if (ratio >= 1.0f) return CH4_MIN_PPM"
-// Ese corte hacía que cualquier lectura con Rs > R0 (sensor en reposo o
-// calentándose) retornara exactamente 0.0 ppm en vez del valor real bajo.
-// La curva de potencia con B=-1.96 (negativo) ya produce valores pequeños
-// pero correctos cuando ratio > 1, y constrain() limita el resultado.
+// FIX v4: eliminado "if (ratio >= 1.0f) return CH4_MIN_PPM" — producía CH4=0
+// siempre que el sensor estaba en reposo o calentándose (Rs > R0).
 float rsToPpm(float rs) {
   if (rs <= 0.0f) return CH4_MAX_PPM;
   float ratio = rs / R0_OHM;
@@ -164,7 +173,6 @@ float readMethane() {
 
   emaRs = EMA_ALPHA * rsNow + (1.0f - EMA_ALPHA) * emaRs;
 
-  // ADC equivalente a baselineRs para comparar en cuentas
   float baselineAdc = 1023.0f / (1.0f + (baselineRs / RL_OHM));
   float deltaAdc    = abs((float)medNH3 - baselineAdc);
 
@@ -175,7 +183,6 @@ float readMethane() {
   float ppm   = rsToPpm(emaRs);
   float ratio = emaRs / R0_OHM;
 
-  // ── Debug con dtostrf (único método fiable de float→string en AVR) ──────
   char s1[12], s2[12], s3[12], s4[12], s5[12], s6[12];
   dtostrf(deltaAdc, 1, 1, s1);
   dtostrf(rsNow,    1, 0, s2);
@@ -261,14 +268,22 @@ void runCalibration() {
 void setup() {
   Serial.begin(9600);
   delay(300);
-  Serial.println("[Nodo02] AgroSense MICS-6814 v4");
+  Serial.println("[Nodo02] AgroSense MICS-6814 LoRa v1");
   Serial.print("[Nodo02] R0="); Serial.print(R0_OHM, 0);
   Serial.print(" ohm  Rango=0-"); Serial.print((int)CH4_MAX_PPM);
   Serial.println(" ppm");
 
-  pinMode(RS485_DE_PIN, OUTPUT);
-  digitalWrite(RS485_DE_PIN, LOW);
-  rs485Serial.begin(9600);
+  // Inicializar LoRa
+  LoRa.setPins(LORA_NSS, LORA_RST, LORA_DIO0);
+  if (!LoRa.begin(LORA_FREQ)) {
+    Serial.println("[LoRa] ERROR: modulo no encontrado. Verifica conexiones.");
+    while (true) delay(1000);
+  }
+  LoRa.setSpreadingFactor(LORA_SF);
+  LoRa.setSignalBandwidth(LORA_BW);
+  LoRa.setCodingRate4(LORA_CR);
+  LoRa.setSyncWord(LORA_SYNC);
+  Serial.println("[LoRa] OK — 433 MHz SF7 BW125kHz SyncWord 0xA5");
 
   if (CALIBRATION_MODE) runCalibration();
 
@@ -295,7 +310,7 @@ void setup() {
   delay(offset);
 
   lastSendTime = millis();
-  Serial.println("[Nodo02] Listo — enviando cada 2s");
+  Serial.println("[Nodo02] Listo — enviando cada 2s por LoRa");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -318,7 +333,7 @@ void loop() {
     strcat(trama, sM);
     strcat(trama, "\n");
 
-    rs485Transmit(trama);
+    loraTransmit(trama);
     Serial.print("[TX] "); Serial.print(trama);
   }
 

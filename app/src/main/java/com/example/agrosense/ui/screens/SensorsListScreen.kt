@@ -1,10 +1,13 @@
 package com.example.agrosense.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,6 +16,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -291,6 +296,7 @@ private fun SensorCard(
     onDelete: () -> Unit,
     onRemoteControl: (Boolean?) -> Unit
 ) {
+    var expanded      by remember { mutableStateOf(false) }
     var pendingAction by remember { mutableStateOf<RemoteAction?>(null) }
 
     // ── Diálogo de confirmación de acción remota ──────────────────────────────
@@ -346,314 +352,298 @@ private fun SensorCard(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        modifier  = Modifier.fillMaxWidth(),
+        shape     = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
 
-            // ── Encabezado ───────────────────────────────────────────────────
+            // ── Header compacto (siempre visible) ────────────────────────────
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        imageVector = if (isThisConnected) Icons.Filled.SignalWifi4Bar
-                        else Icons.Filled.SignalWifiOff,
-                        contentDescription = null,
-                        tint = if (isThisConnected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(sensor.name, style = MaterialTheme.typography.titleMedium)
-                }
-                IconButton(onClick = onViewLogs, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Filled.History, contentDescription = "Historial",
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onShare, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Filled.Share, contentDescription = "Compartir",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Eliminar",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp))
-                }
-            }
-
-            Spacer(Modifier.height(2.dp))
-            Text(
-                "Device ID: ${sensor.device_id}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            sensor.location?.let {
-                Text(
-                    "Ubicación: $it",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                Icon(
+                    imageVector = if (isThisConnected) Icons.Filled.SignalWifi4Bar
+                                  else Icons.Filled.SignalWifiOff,
+                    contentDescription = null,
+                    tint = if (isThisConnected) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
-            }
-
-            Spacer(Modifier.height(10.dp))
-
-            // ── Acciones siempre visibles ─────────────────────────────────
-            OutlinedButton(
-                onClick = onViewCharts,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Filled.BarChart, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Gráficas")
-            }
-
-            Spacer(Modifier.height(2.dp))
-
-            OutlinedButton(
-                onClick = onSchedulePump,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Filled.WaterDrop, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Programar riego")
-            }
-
-            Spacer(Modifier.height(2.dp))
-
-            OutlinedButton(
-                onClick = onGenerateReport,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Filled.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Generar informe PDF")
-            }
-
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(8.dp))
-
-            // ── Control remoto ────────────────────────────────────────────
-            Text(
-                "Control remoto",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(Modifier.height(6.dp))
-
-            // Estado actual del control
-            val (overrideBg, overrideText) = when (sensor.pump_manual_override) {
-                true  -> MaterialTheme.colorScheme.primaryContainer to "Riego activo (manual)"
-                false -> MaterialTheme.colorScheme.errorContainer   to "Riego apagado (manual)"
-                null  -> MaterialTheme.colorScheme.surfaceVariant   to "Modo automático"
-            }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                colors = CardDefaults.cardColors(containerColor = overrideBg)
-            ) {
-                Text(
-                    overrideText,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelMedium
-                )
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // Botones de control
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                val isOn   = sensor.pump_manual_override == true
-                val isOff  = sensor.pump_manual_override == false
-                val isAuto = sensor.pump_manual_override == null
-
-                Button(
-                    onClick = { if (!isOn) pendingAction = RemoteAction.ON },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isOn) MaterialTheme.colorScheme.primary
-                                         else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor   = if (isOn) MaterialTheme.colorScheme.onPrimary
-                                         else MaterialTheme.colorScheme.onSurfaceVariant
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        sensor.name,
+                        style      = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
                     )
-                ) { Text("Encender", style = MaterialTheme.typography.labelSmall) }
-
-                Button(
-                    onClick = { if (!isOff) pendingAction = RemoteAction.OFF },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isOff) MaterialTheme.colorScheme.error
-                                         else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor   = if (isOff) MaterialTheme.colorScheme.onError
-                                         else MaterialTheme.colorScheme.onSurfaceVariant
+                    Text(
+                        sensor.location ?: sensor.device_id,
+                        style    = MaterialTheme.typography.bodySmall,
+                        color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
                     )
-                ) { Text("Apagar", style = MaterialTheme.typography.labelSmall) }
-
-                Button(
-                    onClick = { if (!isAuto) pendingAction = RemoteAction.AUTO },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isAuto) MaterialTheme.colorScheme.secondary
-                                         else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor   = if (isAuto) MaterialTheme.colorScheme.onSecondary
-                                         else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ) { Text("Auto", style = MaterialTheme.typography.labelSmall) }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(8.dp))
-
-            // ── Botón conectar / desconectar ─────────────────────────────────
-            if (!isThisConnected) {
-                OutlinedButton(
-                    onClick = onConnect,
-                    enabled = !isThisConnecting,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (isThisConnecting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Conectando...")
-                    } else {
-                        Icon(
-                            Icons.Filled.Bluetooth,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text("Conectar")
-                    }
                 }
-            } else {
-                OutlinedButton(
-                    onClick = onDisconnect,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) { Text("Desconectar") }
-            }
-
-            // ── Acciones adicionales (solo si conectado) ─────────────────────
-            if (isThisConnected) {
-
-                Spacer(Modifier.height(8.dp))
-
-                // Fila: Bomba + Configurar WiFi
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = onPumpToggle,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (pumpState)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (pumpState)
-                                MaterialTheme.colorScheme.onPrimary
-                            else
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                if (isThisConnected) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
                     ) {
-                        Icon(
-                            Icons.Filled.WaterDrop,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (pumpState) "Riego activo" else "Riego desactivado")
-                    }
-
-                    OutlinedButton(
-                        onClick = onConfigureWifi,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            Icons.Filled.Wifi,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text("WiFi")
-                    }
-                }
-
-                // ── Lecturas en tiempo real ──────────────────────────────────
-                Spacer(Modifier.height(12.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "Lectura en tiempo real",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.height(8.dp))
-
-                if (reading != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        ReadingChip(
-                            label  = "🌡 Temp.",
-                            value  = reading.temperature?.let { "%.1f °C".format(it) } ?: "--",
-                            modifier = Modifier.weight(1f)
-                        )
-                        ReadingChip(
-                            label  = "💧 Hum. aire",
-                            value  = reading.airHumidity?.let { "%.1f %%".format(it) } ?: "--",
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        ReadingChip(
-                            label  = "🌫 CO₂",
-                            value  = reading.co2?.let { "%.0f ppm".format(it) } ?: "--",
-                            modifier = Modifier.weight(1f)
-                        )
-                        ReadingChip(
-                            label  = "🔥 Metano",
-                            value  = reading.methane?.let { "%.0f ppm".format(it) } ?: "--",
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(Modifier.width(8.dp))
                         Text(
-                            "Esperando datos del sensor...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            "Conectado",
+                            modifier   = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            style      = MaterialTheme.typography.labelSmall,
+                            color      = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
+                    Spacer(Modifier.width(6.dp))
+                }
+                Icon(
+                    imageVector        = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (expanded) "Colapsar" else "Expandir",
+                    tint               = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier           = Modifier.size(20.dp)
+                )
+            }
+
+            // ── Detalle expandible ────────────────────────────────────────────
+            AnimatedVisibility(
+                visible = expanded,
+                enter   = expandVertically() + fadeIn(),
+                exit    = shrinkVertically() + fadeOut()
+            ) {
+                Column {
+                    HorizontalDivider()
+                    Spacer(Modifier.height(10.dp))
+
+                    // Fila 1: Gráficas + Programar riego
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(onClick = onViewCharts, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.BarChart, null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Gráficas", style = MaterialTheme.typography.labelSmall)
+                        }
+                        OutlinedButton(onClick = onSchedulePump, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.WaterDrop, null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Programar", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    // Fila 2: Informe + Compartir
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(onClick = onGenerateReport, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.PictureAsPdf, null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Informe", style = MaterialTheme.typography.labelSmall)
+                        }
+                        OutlinedButton(onClick = onShare, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.Share, null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Compartir", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    // Fila 3: Historial + Eliminar
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(onClick = onViewLogs, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.History, null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Historial", style = MaterialTheme.typography.labelSmall)
+                        }
+                        OutlinedButton(
+                            onClick = onDelete,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Icon(Icons.Filled.Delete, null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Eliminar", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+
+                    // ── Control remoto ────────────────────────────────────────
+                    Text("Control remoto",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(6.dp))
+
+                    val (overrideBg, overrideText) = when (sensor.pump_manual_override) {
+                        true  -> MaterialTheme.colorScheme.primaryContainer to "Riego activo (manual)"
+                        false -> MaterialTheme.colorScheme.errorContainer   to "Riego apagado (manual)"
+                        null  -> MaterialTheme.colorScheme.surfaceVariant   to "Modo automático"
+                    }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape    = RoundedCornerShape(8.dp),
+                        colors   = CardDefaults.cardColors(containerColor = overrideBg)
+                    ) {
+                        Text(overrideText,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            style    = MaterialTheme.typography.labelMedium)
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val isOn   = sensor.pump_manual_override == true
+                        val isOff  = sensor.pump_manual_override == false
+                        val isAuto = sensor.pump_manual_override == null
+
+                        Button(
+                            onClick  = { if (!isOn) pendingAction = RemoteAction.ON },
+                            modifier = Modifier.weight(1f),
+                            colors   = ButtonDefaults.buttonColors(
+                                containerColor = if (isOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor   = if (isOn) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        ) { Text("Encender", style = MaterialTheme.typography.labelSmall) }
+
+                        Button(
+                            onClick  = { if (!isOff) pendingAction = RemoteAction.OFF },
+                            modifier = Modifier.weight(1f),
+                            colors   = ButtonDefaults.buttonColors(
+                                containerColor = if (isOff) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor   = if (isOff) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        ) { Text("Apagar", style = MaterialTheme.typography.labelSmall) }
+
+                        Button(
+                            onClick  = { if (!isAuto) pendingAction = RemoteAction.AUTO },
+                            modifier = Modifier.weight(1f),
+                            colors   = ButtonDefaults.buttonColors(
+                                containerColor = if (isAuto) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor   = if (isAuto) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        ) { Text("Auto", style = MaterialTheme.typography.labelSmall) }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+
+                    // ── Botón conectar / desconectar BLE ─────────────────────
+                    if (!isThisConnected) {
+                        OutlinedButton(
+                            onClick  = onConnect,
+                            enabled  = !isThisConnecting,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (isThisConnecting) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Conectando...")
+                            } else {
+                                Icon(Icons.Filled.Bluetooth, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Conectar")
+                            }
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick  = onDisconnect,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors   = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) { Text("Desconectar") }
+                    }
+
+                    // ── Sección BLE activa ────────────────────────────────────
+                    if (isThisConnected) {
+                        Spacer(Modifier.height(8.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick  = onPumpToggle,
+                                modifier = Modifier.weight(1f),
+                                colors   = ButtonDefaults.buttonColors(
+                                    containerColor = if (pumpState) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor   = if (pumpState) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            ) {
+                                Icon(Icons.Filled.WaterDrop, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (pumpState) "Riego activo" else "Riego desactivado",
+                                    style = MaterialTheme.typography.labelSmall)
+                            }
+                            OutlinedButton(onClick = onConfigureWifi, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Filled.Wifi, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("WiFi")
+                            }
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(10.dp))
+                        Text("Lectura en tiempo real",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(8.dp))
+
+                        if (reading != null) {
+                            // ── Ambiente ───────────────────────────────────
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                ReadingChip("🌡 Temp.",     reading.temperature?.let { "%.1f °C".format(it) }  ?: "--", Modifier.weight(1f))
+                                ReadingChip("💧 Hum.",      reading.airHumidity?.let { "%.1f %%".format(it) }  ?: "--", Modifier.weight(1f))
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                ReadingChip("🌫 CO₂",       reading.co2?.let     { "%.0f ppm".format(it) } ?: "--", Modifier.weight(1f))
+                                ReadingChip("🔥 Metano",    reading.methane?.let { "%.0f ppm".format(it) } ?: "--", Modifier.weight(1f))
+                            }
+                            // ── Suelo (solo si hay datos) ──────────────────
+                            val hasSoil = reading.soilTemp != null || reading.soilHum != null ||
+                                          reading.ec != null || reading.ph != null
+                            if (hasSoil) {
+                                Spacer(Modifier.height(8.dp))
+                                Text("Suelo", style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(4.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    ReadingChip("🌱 T.Suelo",  reading.soilTemp?.let  { "%.1f °C".format(it) } ?: "--", Modifier.weight(1f))
+                                    ReadingChip("💧 H.Suelo",  reading.soilHum?.let   { "%.1f %%".format(it) } ?: "--", Modifier.weight(1f))
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    ReadingChip("⚡ Cond.",    reading.ec?.let         { "%.0f µS/cm".format(it) } ?: "--", Modifier.weight(1f))
+                                    ReadingChip("⚗ pH",       reading.ph?.let         { "%.2f".format(it) }       ?: "--", Modifier.weight(1f))
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    ReadingChip("🟢 N",        reading.nitrogen?.let   { "%.0f mg/kg".format(it) } ?: "--", Modifier.weight(1f))
+                                    ReadingChip("🟠 P",        reading.phosphorus?.let { "%.0f mg/kg".format(it) } ?: "--", Modifier.weight(1f))
+                                    ReadingChip("🔵 K",        reading.potassium?.let  { "%.0f mg/kg".format(it) } ?: "--", Modifier.weight(1f))
+                                }
+                            }
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Esperando datos del sensor...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
                 }
             }
         }

@@ -1,50 +1,37 @@
 /*
- * AgroSense - ESP32 WROVER-B DevKit  |  MAESTRO RS485
- * =====================================================
- * Recepción pasiva (PUSH): los nodos envían solos cada 2 s.
+ * AgroSense - ESP32 WROVER-B DevKit  |  MAESTRO LoRa
+ * ====================================================
+ * Recepción pasiva (PUSH): los nodos envían solos cada 2-2.5 s.
  * Trama nodo 01: "$N:01,T:28.50,H:63.20\n"  → temperatura + humedad
  * Trama nodo 02: "$N:02,M:1234.56\n"         → metano (0–10000 ppm)
  *
- * RS485 (MAX485):
- *   GPIO32 → RO (RX)   — GPIO16/17 reservados para PSRAM del WROVER-B
- *   GPIO33 → DI (TX)
- *   GPIO25 → DE + RE unidos
- *   VCC    → 3.3V  ← importante, NO 5V
+ * LoRa Ra-02 (SX1278 433 MHz) — conexión VSPI ESP32 WROVER-B:
+ *   GPIO23 → MOSI        GPIO5  → NSS (CS)
+ *   GPIO19 → MISO        GPIO14 → RST
+ *   GPIO18 → SCK         GPIO26 → DIO0 (IRQ)
+ *   3.3V   → VCC  ←  IMPORTANTE: Ra-02 es 3.3V, NO 5V
+ *   GND    → GND
+ *
+ * Librería requerida: "LoRa" by Sandeep Mistry (Arduino Library Manager)
+ *
+ * Configuración LoRa: 433 MHz | SF7 | BW 125 kHz | CR 4/5 | SyncWord 0xA5
+ *
+ * GPIO16 y GPIO17 reservados para PSRAM del WROVER-B — NO usar.
  *
  * ─────────────────────────────────────────────────────────────────────────
- * FIXES v4 — correcciones de datos en 0 persistentes
+ * FIXES v4/v5 (heredados de versión RS485 — sin cambios en lógica):
  *
- *  FIX A — Rango de metano corregido (BUG PRINCIPAL):
- *    El parser rechazaba m > 20.0f, descartando silenciosamente todos
- *    los valores reales del sensor (rango 0–10000 ppm). currentMethane
- *    quedaba en 0.0f → se guardaba y enviaba como dato válido.
- *    Corregido: límite superior ahora es CH4_MAX_PARSE (10000 ppm).
- *
- *  FIX B — Guardia de "primer dato válido" antes de guardar/enviar:
- *    Si el ciclo de guardado SPIFFS (60 s) o el POST a AWS (30 s) corría
- *    antes de recibir la primera trama del Nodo 01 o Nodo 02, se enviaba
- *    currentAirHumidity=0 o currentMethane=0 como dato real.
- *    Corregido: saveReadingToSPIFFS() y sendToAWS() ahora verifican
- *    gotValidHumidity && gotValidMethane antes de proceder.
- *
- *  FIX C — Fallback por timeout (v3, mantenido):
- *    Si un nodo deja de responder, se usa el último valor válido en vez
- *    de enviar 0. El fallback se activa solo por silencio del nodo
- *    (NODE_TIMEOUT_MS), no por valor == 0.
- *
- *  FIX D — trim() local en campos H y M del parser (v3, mantenido):
- *    Elimina \r u otros caracteres de cola que hacen que toFloat() = 0.
- *
- *  FIX E — Aviso RS485 overflow unsigned long (v5):
- *    La guardia "lastNodeXRx > 0" no protegía contra overflow cuando
- *    lastNodeXRx == 0 y millis() era grande (p.ej. tras el warmup del
- *    Nodo02). La resta unsigned producía 4294967295 ms → aviso falso
- *    en cada ciclo. Corregido: usar gotValidHumidity / gotValidMethane
- *    como guardia, igual que en el resto del código.
+ *  FIX A — Rango de metano corregido: CH4_MAX_PARSE = 10000 ppm
+ *  FIX B — Guardia gotValidHumidity && gotValidMethane antes de POST/SAVE
+ *  FIX C — Fallback por timeout: usa último valor válido (NODE_TIMEOUT_MS)
+ *  FIX D — trim() en campos H y M antes de toFloat()
+ *  FIX E — Guardia gotValidX en lugar de lastNodeXRx>0 (evita overflow)
  * ─────────────────────────────────────────────────────────────────────────
  */
 
 #include "time.h"
+#include <SPI.h>
+#include <LoRa.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
@@ -57,24 +44,28 @@
 #include <Preferences.h>
 
 // ── Pines ──────────────────────────────────────────────────────────────────
-#define LED_PIN     13
+#define LED_PIN      13
 
-// ── RS485 ─────────────────────────────────────────────────────────────────
-#define RS485_RX    32
-#define RS485_TX    33
-#define RS485_DE    25
-#define RS485_BAUD  9600
+// ── LoRa Ra-02 (VSPI ESP32 WROVER-B) ──────────────────────────────────────
+#define LORA_NSS     5     // GPIO5  — NSS/CS (VSPI SS por defecto)
+#define LORA_RST     14    // GPIO14 — Reset
+#define LORA_DIO0    26    // GPIO26 — DIO0 / IRQ
+// MOSI=23, MISO=19, SCK=18 son los pines VSPI por defecto del ESP32
 
-// Tiempo máximo sin respuesta de un nodo antes de usar fallback
+#define LORA_FREQ    433E6
+#define LORA_SF      7
+#define LORA_BW      125E3
+#define LORA_CR      5
+#define LORA_SYNC    0xA5  // sync word privado AgroSense
+#define LORA_POWER   17    // dBm (máx Ra-02 = 17–20 según versión)
+
+// Tiempo máximo sin paquete de un nodo antes de usar fallback
 #define NODE_TIMEOUT_MS  10000UL
 
-// ── FIX A: rango real del sensor de metano ────────────────────────────────
-// El NodoMethano envía 0–10000 ppm. El límite anterior (20.0f) descartaba
-// todos los valores reales, dejando currentMethane siempre en 0.
+// FIX A: rango real del sensor de metano
 #define CH4_MAX_PARSE    10000.0f
 
-HardwareSerial RS485Serial(2);
-String rs485Buf = "";
+String loraBuf = "";
 
 // ── UUIDs BLE ─────────────────────────────────────────────────────────────
 #define SERVICE_UUID        "0000A001-0000-1000-8000-00805F9B34FB"
@@ -94,7 +85,7 @@ String rs485Buf = "";
 
 // ── SPIFFS ────────────────────────────────────────────────────────────────
 #define HISTORY_FILE  "/history.csv"
-#define MAX_RECORDS   500
+#define MAX_RECORDS   900
 
 // ── Variables BLE ─────────────────────────────────────────────────────────
 Preferences prefs;
@@ -135,22 +126,19 @@ float currentMethane     = 0.0f;
 // ── Último valor válido y timestamps de recepción ─────────────────────────
 float lastValidHumidity = 0.0f;
 float lastValidMethane  = 0.0f;
-bool  gotValidHumidity  = false;   // true una vez que Nodo01 envió datos
-bool  gotValidMethane   = false;   // true una vez que Nodo02 envió datos
+bool  gotValidHumidity  = false;
+bool  gotValidMethane   = false;
 
 unsigned long lastNode1Rx = 0;
 unsigned long lastNode2Rx = 0;
 
 // ── Función auxiliar: valores con fallback por timeout ────────────────────
-// Retorna false si aún NO hay ningún dato válido de algún nodo
-// (arranque del sistema, nodo aún no conectado).
 bool getValidReadings(float& outHum, float& outMethane) {
   unsigned long now = millis();
 
   bool node1Stale = (lastNode1Rx == 0) || ((now - lastNode1Rx) > NODE_TIMEOUT_MS);
   bool node2Stale = (lastNode2Rx == 0) || ((now - lastNode2Rx) > NODE_TIMEOUT_MS);
 
-  // Humedad
   if (node1Stale && gotValidHumidity) {
     outHum = lastValidHumidity;
     Serial.printf("[FALLBACK] Nodo01 timeout -> humedad %.1f\n", outHum);
@@ -158,7 +146,6 @@ bool getValidReadings(float& outHum, float& outMethane) {
     outHum = currentAirHumidity;
   }
 
-  // Metano
   if (node2Stale && gotValidMethane) {
     outMethane = lastValidMethane;
     Serial.printf("[FALLBACK] Nodo02 timeout -> metano %.2f\n", outMethane);
@@ -166,12 +153,12 @@ bool getValidReadings(float& outHum, float& outMethane) {
     outMethane = currentMethane;
   }
 
-  // FIX B: retorna true solo si ambos nodos han enviado al menos un dato
+  // FIX B: retorna true solo si ambos nodos enviaron al menos un dato
   return gotValidHumidity && gotValidMethane;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-//  RS485 — parser de tramas
+//  Parser de tramas (idéntico a versión RS485)
 // ══════════════════════════════════════════════════════════════════════════
 
 void parseFrame(const String& frame) {
@@ -190,7 +177,7 @@ void parseFrame(const String& frame) {
     float t = frame.substring(tIdx + 2, cIdx).toFloat();
 
     String hStr = frame.substring(hIdx + 2);
-    hStr.trim();
+    hStr.trim();  // FIX D
     float h = hStr.toFloat();
 
     if (t < -40.0f || t > 125.0f) return;
@@ -202,17 +189,17 @@ void parseFrame(const String& frame) {
     gotValidHumidity   = true;
     lastNode1Rx        = millis();
 
-    Serial.printf("[N01] T:%.2f H:%.2f\n", t, h);
+    Serial.printf("[N01] T:%.2f H:%.2f  RSSI:%d dBm\n", t, h, LoRa.packetRssi());
 
   } else if (nodeId == "02") {
     int mIdx = frame.indexOf("M:");
     if (mIdx < 0) return;
 
     String mStr = frame.substring(mIdx + 2);
-    mStr.trim();
+    mStr.trim();  // FIX D
     float m = mStr.toFloat();
 
-    // FIX A: rango corregido a 0–10000 ppm (antes era 0–20, descartaba todo)
+    // FIX A: rango corregido a 0–10000 ppm
     if (m < 0.0f || m > CH4_MAX_PARSE) return;
 
     currentMethane   = m;
@@ -220,23 +207,25 @@ void parseFrame(const String& frame) {
     gotValidMethane  = true;
     lastNode2Rx      = millis();
 
-    Serial.printf("[N02] CH4:%.2f ppm\n", m);
+    Serial.printf("[N02] CH4:%.2f ppm  RSSI:%d dBm\n", m, LoRa.packetRssi());
   }
 }
 
-void readRS485() {
-  while (RS485Serial.available()) {
-    char c = RS485Serial.read();
-    if (c == '\n') {
-      rs485Buf.trim();
-      if (rs485Buf.length() > 0) parseFrame(rs485Buf);
-      rs485Buf = "";
-    } else if (rs485Buf.length() < 64) {
-      rs485Buf += c;
-    } else {
-      rs485Buf = "";   // trama demasiado larga — descartar
-    }
+// ══════════════════════════════════════════════════════════════════════════
+//  LoRa — recepción no bloqueante
+// ══════════════════════════════════════════════════════════════════════════
+
+void readLoRa() {
+  int packetSize = LoRa.parsePacket();
+  if (packetSize == 0) return;
+
+  loraBuf = "";
+  while (LoRa.available()) {
+    char c = (char)LoRa.read();
+    if (loraBuf.length() < 64) loraBuf += c;
   }
+  loraBuf.trim();
+  if (loraBuf.length() > 0) parseFrame(loraBuf);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -373,7 +362,7 @@ void saveReadingToSPIFFS() {
   float hToSave, mToSave;
   bool ready = getValidReadings(hToSave, mToSave);
 
-  // FIX B: no guardar si aún no hay datos válidos de ambos nodos.
+  // FIX B
   if (!ready) {
     Serial.println("[SPIFFS] Esperando datos de todos los nodos — guardado omitido");
     return;
@@ -439,7 +428,7 @@ void sendToAWS() {
   float hToSend, mToSend;
   bool ready = getValidReadings(hToSend, mToSend);
 
-  // FIX B: no enviar si aún no hay datos válidos de ambos nodos.
+  // FIX B
   if (!ready) {
     Serial.println("[WiFi] Esperando datos de todos los nodos — POST omitido");
     return;
@@ -502,10 +491,19 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
-  pinMode(RS485_DE, OUTPUT);
-  digitalWrite(RS485_DE, LOW);
-  RS485Serial.begin(RS485_BAUD, SERIAL_8N1, RS485_RX, RS485_TX);
-  Serial.println("[RS485] Listo (GPIO32 RX / GPIO33 TX / GPIO25 DE)");
+  // ── Inicializar LoRa ────────────────────────────────────────────────────
+  LoRa.setPins(LORA_NSS, LORA_RST, LORA_DIO0);
+  if (!LoRa.begin(LORA_FREQ)) {
+    Serial.println("[LoRa] ERROR: modulo no encontrado. Verifica conexiones.");
+    while (true) delay(1000);
+  }
+  LoRa.setSpreadingFactor(LORA_SF);
+  LoRa.setSignalBandwidth(LORA_BW);
+  LoRa.setCodingRate4(LORA_CR);
+  LoRa.setTxPower(LORA_POWER);
+  LoRa.setSyncWord(LORA_SYNC);
+  Serial.printf("[LoRa] OK — 433 MHz | SF%d | BW%.0fkHz | SyncWord 0x%02X\n",
+    LORA_SF, LORA_BW / 1000.0f, LORA_SYNC);
 
   if (!SPIFFS.begin(true)) Serial.println("[SPIFFS] Error");
   else Serial.println("[SPIFFS] OK");
@@ -513,10 +511,10 @@ void setup() {
   bool hasConfig = loadConfig();
 
   // Esperar primeras tramas de los nodos (hasta 5 s)
-  Serial.println("[RS485] Esperando nodos...");
+  Serial.println("[LoRa] Esperando nodos...");
   unsigned long waitStart = millis();
-  while (millis() - waitStart < 5000) { readRS485(); delay(10); }
-  Serial.printf("[RS485] Nodo01=%s  Nodo02=%s\n",
+  while (millis() - waitStart < 5000) { readLoRa(); delay(10); }
+  Serial.printf("[LoRa] Nodo01=%s  Nodo02=%s\n",
     gotValidHumidity ? "OK" : "sin dato",
     gotValidMethane  ? "OK" : "sin dato");
 
@@ -567,7 +565,7 @@ void setup() {
   pAdv->setMinPreferred(0x06); pAdv->setMinPreferred(0x12);
   BLEDevice::startAdvertising();
 
-  Serial.println("=== AgroSense WROVER-B listo ===");
+  Serial.println("=== AgroSense WROVER-B LoRa listo ===");
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -577,15 +575,13 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  readRS485();
+  readLoRa();
 
-  // FIX E: Aviso RS485 usa gotValidX como guardia para evitar overflow
-  // unsigned long cuando lastNodeXRx==0 y millis() ya es grande.
-  // El aviso solo se emite si el nodo alguna vez respondió y luego silenció.
+  // FIX E: aviso usa gotValidX como guardia para evitar overflow unsigned long
   if (gotValidHumidity && (now - lastNode1Rx) > 300000)
-    Serial.printf("[RS485] AVISO: Nodo01 silencioso hace %lu ms\n", now - lastNode1Rx);
+    Serial.printf("[LoRa] AVISO: Nodo01 silencioso hace %lu ms\n", now - lastNode1Rx);
   if (gotValidMethane && (now - lastNode2Rx) > 300000)
-    Serial.printf("[RS485] AVISO: Nodo02 silencioso hace %lu ms\n", now - lastNode2Rx);
+    Serial.printf("[LoRa] AVISO: Nodo02 silencioso hace %lu ms\n", now - lastNode2Rx);
 
   // BLE cada 2 s
   if (now - lastBleTime >= BLE_INTERVAL) {
@@ -603,10 +599,10 @@ void loop() {
     }
   }
 
-  // SPIFFS cada 60 s — FIX B: omite si no hay datos de todos los nodos
+  // SPIFFS cada 60 s — FIX B
   if (now - lastSaveTime >= SAVE_INTERVAL) { lastSaveTime = now; saveReadingToSPIFFS(); }
 
-  // AWS cada 30 s — FIX B: omite si no hay datos de todos los nodos
+  // AWS cada 30 s — FIX B
   if (now - lastWifiTime >= WIFI_INTERVAL) { lastWifiTime = now; sendToAWS(); }
 
   // Bomba
